@@ -1,0 +1,36 @@
+{
+  "name": "MNores Android",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "forwardPorts": [8081, 19000, 19001, 19002],
+  "portsAttributes": {
+    "8081": {
+      "label": "Expo Metro",
+      "onAutoForward": "notify"
+    },
+    "19000": {
+      "label": "Expo",
+      "onAutoForward": "notify"
+    },
+    "19001": {
+      "label": "Expo LAN",
+      "onAutoForward": "notify"
+    },
+    "19002": {
+      "label": "Expo DevTools",
+      "onAutoForward": "notify"
+    }
+  },
+  "postCreateCommand": "corepack enable && cd frontend && yarn install",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "expo.vscode-expo-tools",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  }
+}
