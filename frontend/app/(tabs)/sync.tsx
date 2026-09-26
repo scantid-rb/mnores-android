@@ -1,6 +1,5 @@
-// Sync status screen: connectivity, last sync time, cached counts and a
-// manual "Sync now" action. The full push/retry/conflict engine is a later
-// phase; here we run the initial pull.
+// Sync status screen: connectivity, last sync, pending count, cached counts,
+// a neutral conflict notice and a manual "Sync now" action.
 
 import { useMemo } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
@@ -8,21 +7,21 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { StatusBadge } from "@/src/components/StatusBadge";
 import { useCounts } from "@/src/hooks/useInventory";
-import { useInitialSync } from "@/src/hooks/useSync";
-import { ApiError } from "@/src/services/api/client";
 import { useConnectivity } from "@/src/services/sync/connectivity";
 import { useSession } from "@/src/state/SessionContext";
-import { makeStyles, useTheme } from "@/src/theme";
+import { useSync } from "@/src/state/SyncContext";
+import { makeStyles } from "@/src/theme";
 
 export default function SyncScreen() {
   const styles = useStyles();
-  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
   const { online } = useConnectivity();
   const { session } = useSession();
-  const sync = useInitialSync();
+  const { status, pendingCount, lastError, conflictNotice, syncNow, clearConflictNotice } = useSync();
   const { data: counts } = useCounts();
+
+  const syncing = status === "syncing";
 
   const lastSync = useMemo(() => {
     if (!session?.last_sync_at) return "Nunca";
@@ -30,24 +29,18 @@ export default function SyncScreen() {
     return isNaN(d.getTime()) ? session.last_sync_at : d.toLocaleString();
   }, [session?.last_sync_at]);
 
-  const errorMessage =
-    sync.error instanceof ApiError
-      ? sync.error.message
-      : sync.error
-        ? "No se pudo sincronizar."
-        : null;
-
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Sincronización</Text>
-        <StatusBadge online={online} syncing={sync.isFetching} />
+        <StatusBadge online={online} syncing={syncing} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.card}>
           <Row label="Conexión" value={online ? "Online" : "Offline"} />
           <Row label="Última sincronización" value={lastSync} />
+          <Row label="Cambios pendientes" value={String(pendingCount)} />
         </View>
 
         <View style={styles.card}>
@@ -57,27 +50,37 @@ export default function SyncScreen() {
           <Row label="Barcos" value={String(counts?.boats ?? 0)} />
         </View>
 
-        {!!errorMessage && (
+        {conflictNotice && (
+          <View style={styles.notice} testID="conflict-notice">
+            <Text style={styles.noticeText}>
+              El servidor reconcilió algún cambio. Se ha actualizado el inventario con el
+              estado del servidor.
+            </Text>
+            <Pressable onPress={clearConflictNotice} testID="conflict-dismiss">
+              <Text style={styles.noticeDismiss}>Entendido</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {!!lastError && (
           <Text style={styles.error} testID="sync-error">
-            {errorMessage}
+            {lastError}
           </Text>
         )}
 
         <Pressable
-          style={[styles.button, (!online || sync.isFetching) && styles.buttonDisabled]}
-          onPress={() => sync.refetch()}
-          disabled={!online || sync.isFetching}
+          style={[styles.button, (!online || syncing) && styles.buttonDisabled]}
+          onPress={() => syncNow()}
+          disabled={!online || syncing}
           testID="sync-now-button"
         >
-          <Text style={styles.buttonText}>
-            {sync.isFetching ? "Sincronizando…" : "Sincronizar ahora"}
-          </Text>
+          <Text style={styles.buttonText}>{syncing ? "Sincronizando…" : "Sincronizar ahora"}</Text>
         </Pressable>
 
         {!online && (
           <Text style={styles.hint}>
-            Trabajas en modo offline. El inventario sigue disponible; la
-            sincronización se reanudará al recuperar la conexión.
+            Trabajas en modo offline. El inventario y tus cambios siguen disponibles; la cola
+            se sincronizará automáticamente al recuperar la conexión.
           </Text>
         )}
       </ScrollView>
@@ -95,10 +98,7 @@ export default function SyncScreen() {
 }
 
 const useStyles = makeStyles((colors) => ({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.surface,
-  },
+  screen: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -109,15 +109,8 @@ const useStyles = makeStyles((colors) => ({
     borderBottomWidth: 1,
     borderBottomColor: colors.divider,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: colors.onSurface,
-  },
-  content: {
-    padding: 16,
-    gap: 16,
-  },
+  title: { fontSize: 24, fontWeight: "800", color: colors.onSurface },
+  content: { padding: 16, gap: 16 },
   card: {
     backgroundColor: colors.surfaceSecondary,
     borderRadius: 16,
@@ -126,46 +119,21 @@ const useStyles = makeStyles((colors) => ({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: colors.onSurfaceSecondary,
-  },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  rowLabel: {
-    fontSize: 14,
-    color: colors.muted,
-  },
-  rowValue: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: colors.onSurface,
-  },
-  error: {
-    color: colors.error,
-    fontSize: 14,
-  },
-  button: {
-    backgroundColor: colors.brandPrimary,
+  cardTitle: { fontSize: 15, fontWeight: "700", color: colors.onSurfaceSecondary },
+  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  rowLabel: { fontSize: 14, color: colors.muted },
+  rowValue: { fontSize: 14, fontWeight: "700", color: colors.onSurface },
+  notice: {
+    backgroundColor: colors.brandTertiary,
     borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: "center",
+    padding: 14,
+    gap: 8,
   },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  buttonText: {
-    color: colors.onBrandPrimary,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  hint: {
-    fontSize: 13,
-    color: colors.muted,
-    lineHeight: 18,
-  },
+  noticeText: { fontSize: 14, color: colors.onBrandTertiary, lineHeight: 19 },
+  noticeDismiss: { fontSize: 14, fontWeight: "700", color: colors.brandPrimary },
+  error: { color: colors.error, fontSize: 14 },
+  button: { backgroundColor: colors.brandPrimary, borderRadius: 12, paddingVertical: 16, alignItems: "center" },
+  buttonDisabled: { opacity: 0.5 },
+  buttonText: { color: colors.onBrandPrimary, fontSize: 16, fontWeight: "700" },
+  hint: { fontSize: 13, color: colors.muted, lineHeight: 18 },
 }));

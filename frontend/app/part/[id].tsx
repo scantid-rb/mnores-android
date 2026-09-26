@@ -1,12 +1,26 @@
-// Part detail (read-only in Phase 1). Reads from the local cache so it works
-// offline. Edit actions per role arrive in later phases.
+// Part detail. Reads from the local cache (offline-capable). Role-based
+// actions: quantity +/- (chief_engineer, mechanic), edit fields and delete
+// (chief_engineer). Delete uses an inline two-step confirm (no Alert).
 
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useCategories, usePart } from "@/src/hooks/useInventory";
+import { useDeletePart, useUpdatePart } from "@/src/hooks/usePartMutations";
+import { useSession } from "@/src/state/SessionContext";
 import { makeStyles, useTheme } from "@/src/theme";
+import { SyncState } from "@/src/types";
+import { canDeletePart, canEditFields, canEditQuantity } from "@/src/utils/permissions";
+
+const SYNC_TEXT: Record<SyncState, string> = {
+  synced: "Sincronizado",
+  pending: "Pendiente de sincronizar",
+  syncing: "Sincronizando",
+  error: "Error de sincronización",
+  conflict: "Conflicto (reconciliado por el servidor)",
+};
 
 export default function PartDetailScreen() {
   const styles = useStyles();
@@ -15,14 +29,39 @@ export default function PartDetailScreen() {
   const router = useRouter();
 
   const { id } = useLocalSearchParams<{ id: string }>();
-  const partId = Number(id);
-  const { data: part, isLoading } = usePart(partId);
+  const rowUid = String(id);
+  const { data: part, isLoading } = usePart(rowUid);
   const { data: categories = [] } = useCategories();
+  const { user } = useSession();
+
+  const updatePart = useUpdatePart();
+  const deletePart = useDeletePart();
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const categoryName =
-    part?.category_id != null
-      ? categories.find((c) => c.id === part.category_id)?.name ?? "—"
-      : "—";
+    part?.category_id != null ? categories.find((c) => c.id === part.category_id)?.name ?? "—" : "—";
+
+  const canQty = canEditQuantity(user?.role);
+  const canEdit = canEditFields(user?.role);
+  const canDelete = canDeletePart(user?.role);
+
+  const changeQty = (delta: number) => {
+    if (!part) return;
+    const next = Math.max(0, part.quantity + delta);
+    if (next === part.quantity) return;
+    updatePart.mutate({ rowUid, fields: { quantity: next } });
+  };
+
+  const onDelete = () => {
+    deletePart.mutate(rowUid, { onSuccess: () => router.back() });
+  };
+
+  const syncColor =
+    part?.sync_state === "error" || part?.sync_state === "conflict"
+      ? colors.error
+      : part?.sync_state === "synced"
+        ? colors.success
+        : colors.warning;
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -30,6 +69,11 @@ export default function PartDetailScreen() {
         <Pressable onPress={() => router.back()} hitSlop={12} testID="detail-back-button">
           <Text style={styles.back}>‹ Volver</Text>
         </Pressable>
+        {canEdit && !!part && (
+          <Pressable onPress={() => router.push(`/part-edit?mode=edit&rowUid=${rowUid}`)} testID="detail-edit-button">
+            <Text style={styles.edit}>Editar</Text>
+          </Pressable>
+        )}
       </View>
 
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
@@ -45,9 +89,23 @@ export default function PartDetailScreen() {
               {part.name}
             </Text>
 
-            <View style={styles.qtyBlock}>
-              <Text style={styles.qtyValue}>{part.quantity}</Text>
-              <Text style={styles.qtyLabel}>unidades</Text>
+            <View style={styles.qtyRow}>
+              {canQty && (
+                <Pressable style={styles.qtyBtn} onPress={() => changeQty(-1)} testID="detail-qty-dec">
+                  <Text style={styles.qtyBtnText}>−</Text>
+                </Pressable>
+              )}
+              <View style={styles.qtyCenter}>
+                <Text style={styles.qtyValue} testID="detail-qty-value">
+                  {part.quantity}
+                </Text>
+                <Text style={styles.qtyLabel}>unidades</Text>
+              </View>
+              {canQty && (
+                <Pressable style={styles.qtyBtn} onPress={() => changeQty(+1)} testID="detail-qty-inc">
+                  <Text style={styles.qtyBtnText}>+</Text>
+                </Pressable>
+              )}
             </View>
 
             <View style={styles.card}>
@@ -63,23 +121,37 @@ export default function PartDetailScreen() {
                 label="Actualizado"
                 value={part.updated_at ? new Date(part.updated_at).toLocaleString() : "—"}
               />
-              <Field label="Estado" value="Sincronizado" valueColor={colors.success} />
+              <Field label="Estado" value={SYNC_TEXT[part.sync_state]} valueColor={syncColor} />
             </View>
+
+            {canDelete && (
+              <View>
+                {!confirmDelete ? (
+                  <Pressable style={styles.deleteBtn} onPress={() => setConfirmDelete(true)} testID="detail-delete-button">
+                    <Text style={styles.deleteText}>Eliminar repuesto</Text>
+                  </Pressable>
+                ) : (
+                  <View style={styles.confirmBox} testID="detail-delete-confirm">
+                    <Text style={styles.confirmText}>¿Eliminar este repuesto?</Text>
+                    <View style={styles.confirmRow}>
+                      <Pressable style={styles.confirmCancel} onPress={() => setConfirmDelete(false)} testID="detail-delete-cancel">
+                        <Text style={styles.confirmCancelText}>Cancelar</Text>
+                      </Pressable>
+                      <Pressable style={styles.confirmDelete} onPress={onDelete} testID="detail-delete-confirm-button">
+                        <Text style={styles.confirmDeleteText}>Eliminar</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
           </>
         )}
       </ScrollView>
     </View>
   );
 
-  function Field({
-    label,
-    value,
-    valueColor,
-  }: {
-    label: string;
-    value: string;
-    valueColor?: string;
-  }) {
+  function Field({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
     return (
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>{label}</Text>
@@ -90,42 +162,31 @@ export default function PartDetailScreen() {
 }
 
 const useStyles = makeStyles((colors) => ({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.surface,
-  },
+  screen: { flex: 1, backgroundColor: colors.surface },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  back: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: colors.brandPrimary,
+  back: { fontSize: 16, fontWeight: "700", color: colors.brandPrimary },
+  edit: { fontSize: 16, fontWeight: "700", color: colors.brandPrimary },
+  content: { padding: 16, gap: 16 },
+  name: { fontSize: 26, fontWeight: "800", color: colors.onSurface },
+  qtyRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 24 },
+  qtyBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.brandTertiary,
   },
-  content: {
-    padding: 16,
-    gap: 16,
-  },
-  name: {
-    fontSize: 26,
-    fontWeight: "800",
-    color: colors.onSurface,
-  },
-  qtyBlock: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 8,
-  },
-  qtyValue: {
-    fontSize: 40,
-    fontWeight: "800",
-    color: colors.brandPrimary,
-  },
-  qtyLabel: {
-    fontSize: 16,
-    color: colors.muted,
-  },
+  qtyBtnText: { fontSize: 30, fontWeight: "800", color: colors.onBrandTertiary, lineHeight: 32 },
+  qtyCenter: { alignItems: "center", minWidth: 90 },
+  qtyValue: { fontSize: 44, fontWeight: "800", color: colors.brandPrimary },
+  qtyLabel: { fontSize: 14, color: colors.muted },
   card: {
     backgroundColor: colors.surfaceSecondary,
     borderRadius: 16,
@@ -134,20 +195,17 @@ const useStyles = makeStyles((colors) => ({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  field: {
-    gap: 2,
-  },
-  fieldLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.muted,
-  },
-  fieldValue: {
-    fontSize: 16,
-    color: colors.onSurface,
-  },
-  muted: {
-    fontSize: 15,
-    color: colors.muted,
-  },
+  field: { gap: 2 },
+  fieldLabel: { fontSize: 12, fontWeight: "600", color: colors.muted },
+  fieldValue: { fontSize: 16, color: colors.onSurface },
+  muted: { fontSize: 15, color: colors.muted },
+  deleteBtn: { borderWidth: 1, borderColor: colors.error, borderRadius: 12, paddingVertical: 16, alignItems: "center" },
+  deleteText: { color: colors.error, fontSize: 16, fontWeight: "700" },
+  confirmBox: { borderWidth: 1, borderColor: colors.error, borderRadius: 12, padding: 16, gap: 12 },
+  confirmText: { fontSize: 15, fontWeight: "700", color: colors.onSurface, textAlign: "center" },
+  confirmRow: { flexDirection: "row", gap: 12 },
+  confirmCancel: { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingVertical: 14, alignItems: "center" },
+  confirmCancelText: { fontSize: 15, fontWeight: "700", color: colors.onSurface },
+  confirmDelete: { flex: 1, backgroundColor: colors.error, borderRadius: 10, paddingVertical: 14, alignItems: "center" },
+  confirmDeleteText: { fontSize: 15, fontWeight: "700", color: colors.onError },
 }));

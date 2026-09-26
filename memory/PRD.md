@@ -32,38 +32,44 @@ autoridad final.
 ### Fase 0 — Análisis/arquitectura (2026-09-26) ✅
 - Propuesta completa de arquitectura, carpetas, dependencias, modelo de datos, flujos y plan.
 
-### Fase 1 — Primera versión funcional (2026-09-26) ✅ (validación app e2e en Android pendiente)
-- Proyecto Expo Router + TypeScript, providers (SafeArea, Query, Session, Keyboard).
-- Config por env: EXPO_PUBLIC_API_BASE_URL (sin URLs hard-coded). Cleartext HTTP Android
-  solo dev (app.json android.usesCleartextTraffic=true — QUITAR antes de producción HTTPS).
-- API client centralizado (Bearer, timeout, parseo seguro, sin logs de token).
-- Endpoints: /api/login, /api/me, /api/sync.
-- Token en expo-secure-store; sesión (id, username, role, boat_id, last_sync_at) en SQLite.
-- SQLite local (expo-sqlite) con tablas session, boats, categories, parts + índices
-  (name, reference, location, category) y fallback web (storage util) para el preview.
-- Sincronización inicial: /api/me (valida) → /api/sync → reconciliación en cache local.
-- Pantallas: Login, Inventario (lista compacta, buscador permanente, chips de categoría,
-  pull-to-refresh, estado de sync), Detalle (solo lectura), Sync (estado/contadores/manual),
-  Perfil (usuario/rol/barco/versiones/logout).
-- Gate de sesión offline: con sesión guardada entra directo a inventario sin red; sin sesión
-  muestra login. El primer login sí requiere red.
-- Búsqueda LOCAL sobre SQLite (LIKE + índices), disponible offline.
-- Detección de conectividad (NetInfo): Online / Offline.
+### Fase 1 — Primera versión funcional (2026-09-26) ✅ APROBADA
+- Login, sesión segura (token en secure-store), /api/me, /api/sync, SQLite, inventario,
+  búsqueda local y gate offline. Validada en Android/Expo Go por el cliente.
+
+### Fase 2 — Offline-first CRUD + cola de sincronización (2026-09-26) ✅ (validación device pendiente)
+- Tabla `pending_changes` (queue_id, action, entity, entity_id, row_uid, client_local_id,
+  payload, base_updated_at, created_at, retry_count, last_error, status) persistente en SQLite;
+  recuperación de operaciones 'syncing' huérfanas al iniciar.
+- `parts` migrada a PK local `row_uid` (+ server_id nullable, pending_delete, sync_state) para
+  soportar creates offline sin id de servidor. Migración por PRAGMA user_version=2.
+- CREATE/UPDATE/DELETE local-first y atómicos (parte + cola en una transacción SQLite).
+- `client_local_id` estable: se genera una vez y se reutiliza en cada reintento (idempotencia
+  por (boat_id, client_local_id)). Verificado por curl: reintento → mismo id, sin duplicado.
+- Consolidación de updates: taps repetidos de cantidad y edición previa a sync se fusionan en
+  una sola operación pendiente por repuesto (create+edit → un solo create).
+- Sync Engine funcional: push batch a /api/parts/push, procesa results[].status por operación
+  (ok, conflict_overwritten, not_found, forbidden, invalid), retry acotado (máx 5) sin bucles,
+  no pierde ni duplica; luego GET /api/sync + reconciliación protegiendo filas con pendientes.
+  Disparos: al iniciar (si hay red), al recuperar conexión, y botón manual "Sincronizar ahora".
+- Conflictos: conflict_overwritten → aviso neutral + reconciliación por /api/sync (estado final
+  del servidor). Sin política de resolución inventada en el cliente.
+- Permisos de rol en UI: chief_engineer crea/edita/elimina/cambia cantidad; mechanic solo
+  cantidad. El servidor sigue siendo la autoridad (forbidden manejado).
+- UX: indicadores discretos por repuesto (pendiente/sincronizando/sincronizado/error/conflicto),
+  banner de pendientes, FAB de alta, +/- de cantidad inline y en detalle, confirmación de
+  borrado en dos pasos (sin Alert). El inventario no se bloquea durante la sync.
 
 ## NO implementado aún (fases posteriores)
-CREATE/UPDATE/DELETE, pending_changes funcional, cola de sync, reintentos/backoff,
-conflictos, fotos/cámara, sincronización de modificaciones, resto de menús por rol,
+Fotos/cámara, administración de usuarios/barcos/categorías, resto de menús por rol,
 UI avanzada/animaciones, build de producción.
 
 ## Backlog priorizado
-- P0 (Fase 2): CRUD local + tabla/lógica pending_changes (offline), local_id idempotente.
-- P0 (Fase 3): Sync engine completo (push cola, results[].status, reintentos, conflictos,
-  prueba de respuesta perdida / no duplicados).
+- P0 (Fase 3): Sincronización completa/robustez avanzada, escenarios de conflicto extendidos.
 - P1 (Fase 4): Fotos (GET/POST /api/photos/{id}) con cámara/galería y subida diferida.
 - P1 (Fase 5): Resto de funciones/menús según rol; UX y robustez de errores.
 - P2 (Fase 6): Pruebas finales + build Android (retirar cleartext, HTTPS).
 
 ## Próximas tareas
-1. Validar en Android/Expo Go: login → sesión → /api/me → /api/sync → inventario → cerrar
-   offline → reabrir → sigue en inventario con datos y búsqueda.
-2. Al aprobar, comenzar Fase 2 (CRUD local + cola).
+1. Validar Fase 2 en Android/Expo Go (matriz A–H: online CRUD, offline create/update/delete,
+   retry, idempotencia, permisos, conflicto).
+2. Al aprobar, comenzar Fase 3.

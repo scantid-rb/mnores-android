@@ -1,6 +1,5 @@
-// Read hooks over the LOCAL cache (SQLite). The inventory shown always comes
-// from local persistence, never from an in-memory-only cache — react-query is
-// used only to orchestrate the reads and re-render on invalidation.
+// Read hooks over the LOCAL cache (SQLite). react-query only orchestrates the
+// reads and re-renders on invalidation; SQLite is the real persistence.
 
 import { useQuery } from "@tanstack/react-query";
 
@@ -27,10 +26,11 @@ export function useBoats() {
   });
 }
 
-export function usePart(id: number) {
+export function usePart(rowUid: string) {
   return useQuery({
-    queryKey: ["part", id],
-    queryFn: () => inventoryRepository.getPart(id),
+    queryKey: ["part", rowUid],
+    queryFn: () => inventoryRepository.getPart(rowUid),
+    enabled: !!rowUid,
   });
 }
 

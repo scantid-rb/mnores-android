@@ -8,6 +8,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { queryClient } from "@/src/query-client";
 import { SessionProvider } from "@/src/state/SessionContext";
+import { SyncProvider } from "@/src/state/SyncContext";
 
 // Disable logbox errors etc so that users can see the app
 // and agent works as expected.
@@ -22,8 +23,10 @@ export default function RootLayout() {
         <SafeAreaProvider>
           <KeyboardProvider>
             <SessionProvider>
-              <StatusBar style="dark" />
-              <Stack screenOptions={{ headerShown: false }} />
+              <SyncProvider>
+                <StatusBar style="dark" />
+                <Stack screenOptions={{ headerShown: false }} />
+              </SyncProvider>
             </SessionProvider>
           </KeyboardProvider>
         </SafeAreaProvider>
