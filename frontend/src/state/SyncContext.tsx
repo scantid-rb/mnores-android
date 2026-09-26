@@ -1,7 +1,7 @@
-// Sync orchestration for the UI. Holds sync status, pending count and a
-// neutral conflict notice. Triggers a sync pass on app start (if online),
-// whenever connectivity is regained, and on demand via syncNow(). It does not
-// block the inventory; the UI stays usable while the queue is processed.
+// Sync orchestration for the UI. Holds sync status, pending count, a neutral
+// conflict notice, an accurate error message and the last attempt diagnostics.
+// Triggers a sync pass on app start (if online), on connectivity regain, and
+// on demand. It does not block the inventory while the queue is processed.
 
 import React, {
   createContext,
@@ -15,7 +15,7 @@ import React, {
 
 import { queryClient } from "@/src/query-client";
 import { localStore } from "@/src/database/store";
-import { runSync, SyncSummary } from "@/src/services/sync/syncEngine";
+import { runSync, SyncDiagnostics, SyncSummary } from "@/src/services/sync/syncEngine";
 import { useConnectivity } from "@/src/services/sync/connectivity";
 import { useSession } from "@/src/state/SessionContext";
 
@@ -26,6 +26,7 @@ interface SyncContextValue {
   pendingCount: number;
   lastError: string | null;
   conflictNotice: boolean;
+  diagnostics: SyncDiagnostics | null;
   syncNow: () => Promise<void>;
   refreshPending: () => Promise<void>;
   clearConflictNotice: () => void;
@@ -40,6 +41,15 @@ function invalidateInventory() {
   queryClient.invalidateQueries({ queryKey: ["counts"] });
 }
 
+function messageFor(s: SyncSummary): string | null {
+  if (s.networkError) return "Sin conexión con el servidor. Reintentaremos automáticamente.";
+  if (s.serverError || s.failed > 0) {
+    const code = s.diagnostics?.httpStatus ? ` (HTTP ${s.diagnostics.httpStatus})` : "";
+    return `El servidor rechazó una o más operaciones${code}. Revisa el diagnóstico más abajo.`;
+  }
+  return null;
+}
+
 export function SyncProvider({ children }: { children: React.ReactNode }) {
   const { token, signOut } = useSession();
   const { online } = useConnectivity();
@@ -48,6 +58,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [pendingCount, setPendingCount] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
   const [conflictNotice, setConflictNotice] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<SyncDiagnostics | null>(null);
 
   const running = useRef(false);
   const prevOnline = useRef(online);
@@ -68,14 +79,15 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     setLastError(null);
     try {
       const summary: SyncSummary = await runSync(token);
+      if (summary.diagnostics) setDiagnostics(summary.diagnostics);
       if (summary.authError) {
         await signOut();
         return;
       }
       if (summary.conflicts > 0) setConflictNotice(true);
-      if (summary.networkError) setLastError("Sin conexión con el servidor. Reintentaremos.");
-      else if (summary.failed > 0) setLastError("Algunas operaciones fueron rechazadas por el servidor.");
-      setStatus(summary.networkError || summary.failed > 0 ? "error" : "idle");
+      const msg = messageFor(summary);
+      setLastError(msg);
+      setStatus(msg ? "error" : "idle");
       invalidateInventory();
     } catch (e) {
       setLastError(e instanceof Error ? e.message : "Error de sincronización");
@@ -95,9 +107,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   // Auto-sync when connectivity is regained (offline -> online).
   useEffect(() => {
-    if (online && !prevOnline.current && token) {
-      void syncNow();
-    }
+    if (online && !prevOnline.current && token) void syncNow();
     prevOnline.current = online;
   }, [online, token, syncNow]);
 
@@ -107,11 +117,12 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       pendingCount,
       lastError,
       conflictNotice,
+      diagnostics,
       syncNow,
       refreshPending,
       clearConflictNotice: () => setConflictNotice(false),
     }),
-    [status, pendingCount, lastError, conflictNotice, syncNow, refreshPending],
+    [status, pendingCount, lastError, conflictNotice, diagnostics, syncNow, refreshPending],
   );
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;

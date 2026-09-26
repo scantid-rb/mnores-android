@@ -1,10 +1,14 @@
 // Create / edit a part. chief_engineer edits all fields; other roles that
 // reach it (edit) can only change quantity. Local-first: saving writes SQLite
 // and queues the change immediately, then returns.
+//
+// NOTE: the Field wrapper is declared at MODULE scope (not inside the screen
+// component). Declaring it inside caused React to see a new component type on
+// every keystroke, remounting the TextInputs and dropping keyboard focus.
 
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ReactNode, useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -63,9 +67,17 @@ export default function PartEditScreen() {
 
   const onSave = () => {
     setError(null);
-    if (fullEdit && name.trim().length === 0) {
-      setError("El nombre es obligatorio.");
-      return;
+    if (fullEdit) {
+      if (name.trim().length === 0) {
+        setError("El nombre es obligatorio.");
+        return;
+      }
+      // The backend requires a valid category on parts; enforce it here so we
+      // never enqueue a create/update that the server would reject (HTTP 500).
+      if (categoryId == null) {
+        setError("Selecciona una categoría.");
+        return;
+      }
     }
 
     if (isEdit) {
@@ -125,7 +137,7 @@ export default function PartEditScreen() {
             <Field label="Referencia">
               <TextInput style={styles.input} value={reference} onChangeText={setReference} placeholder="Referencia" placeholderTextColor={colors.muted} autoCapitalize="characters" testID="edit-reference-input" />
             </Field>
-            <Field label="Categoría">
+            <Field label="Categoría *">
               <View style={styles.chipsRow}>
                 {categories.map((c) => {
                   const active = categoryId === c.id;
@@ -192,15 +204,17 @@ export default function PartEditScreen() {
       </KeyboardAwareScrollView>
     </View>
   );
+}
 
-  function Field({ label, children }: { label: string; children: ReactNode }) {
-    return (
-      <View style={styles.fieldBlock}>
-        <Text style={styles.fieldLabel}>{label}</Text>
-        {children}
-      </View>
-    );
-  }
+// Module-scope so its identity is stable across renders (keeps TextInput focus).
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  const styles = useStyles();
+  return (
+    <View style={styles.fieldBlock}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      {children}
+    </View>
+  );
 }
 
 const useStyles = makeStyles((colors) => ({

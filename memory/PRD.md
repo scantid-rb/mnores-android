@@ -59,6 +59,21 @@ autoridad final.
   banner de pendientes, FAB de alta, +/- de cantidad inline y en detalle, confirmación de
   borrado en dos pasos (sin Alert). El inventario no se bloquea durante la sync.
 
+### Fase 2 — Correcciones tras pruebas en dispositivo (2026-09-26)
+- BUG SYNC (raíz): el backend devuelve HTTP 500 (cuerpo vacío) en creates con `category_id`
+  null/omitido; el cliente clasificaba cualquier error != 401/403 como "Sin conexión". Fixes
+  (solo cliente): (1) `ApiError.kind` (network/timeout/http/parse/api) + snippet de cuerpo;
+  (2) el engine distingue conectividad real de errores HTTP/parse/API y NO los llama "sin
+  conexión"; (3) envío por-ítem para que un ítem inválido no bloquee al resto de la cola;
+  (4) tarjeta "Diagnóstico" en la pantalla Sync (método, URL, status HTTP, timeout, error de
+  fetch, JSON válido, clasificación, recorte de respuesta) sin exponer tokens; (5) categoría
+  ahora obligatoria en el formulario para no encolar operaciones que el servidor rechazaría.
+  Recuperación de un pendiente atascado sin categoría: abrir el repuesto → Editar → elegir
+  categoría → Guardar (se fusiona en el create) → sincroniza. No se borra ningún pendiente.
+- BUG TECLADO (raíz): el componente `Field` estaba declarado DENTRO de `PartEditScreen`, por lo
+  que cada `onChangeText` creaba una nueva identidad de componente y React remontaba los
+  `TextInput`, perdiendo el foco. Fix: `Field` movido a ámbito de módulo (identidad estable).
+
 ## NO implementado aún (fases posteriores)
 Fotos/cámara, administración de usuarios/barcos/categorías, resto de menús por rol,
 UI avanzada/animaciones, build de producción.

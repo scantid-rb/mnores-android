@@ -18,7 +18,7 @@ export default function SyncScreen() {
 
   const { online } = useConnectivity();
   const { session } = useSession();
-  const { status, pendingCount, lastError, conflictNotice, syncNow, clearConflictNotice } = useSync();
+  const { status, pendingCount, lastError, conflictNotice, diagnostics, syncNow, clearConflictNotice } = useSync();
   const { data: counts } = useCounts();
 
   const syncing = status === "syncing";
@@ -66,6 +66,30 @@ export default function SyncScreen() {
           <Text style={styles.error} testID="sync-error">
             {lastError}
           </Text>
+        )}
+
+        {!!diagnostics && (
+          <View style={styles.card} testID="sync-diagnostics">
+            <Text style={styles.cardTitle}>Diagnóstico última sincronización</Text>
+            <Row label="Endpoint" value={`${diagnostics.method} ${diagnostics.path}`} />
+            <Row label="Status HTTP" value={diagnostics.httpStatus != null ? String(diagnostics.httpStatus) : "—"} />
+            <Row label="Clasificación" value={diagnostics.classification} />
+            <Row label="Timeout" value={diagnostics.timeout ? "Sí" : "No"} />
+            <Row label="Error de red (fetch)" value={diagnostics.fetchError ? "Sí" : "No"} />
+            <Row label="JSON válido" value={diagnostics.parseOk ? "Sí" : "No"} />
+            <Row label="Hora" value={new Date(diagnostics.at).toLocaleTimeString()} />
+            {!!diagnostics.bodySnippet && (
+              <View style={styles.bodyBox}>
+                <Text style={styles.bodyLabel}>Respuesta (recorte)</Text>
+                <Text style={styles.bodyText} testID="sync-diagnostics-body">
+                  {diagnostics.bodySnippet || "(cuerpo vacío)"}
+                </Text>
+              </View>
+            )}
+            {!diagnostics.bodySnippet && diagnostics.classification !== "ok" && (
+              <Text style={styles.bodyText}>Cuerpo de respuesta vacío.</Text>
+            )}
+          </View>
         )}
 
         <Pressable
@@ -132,6 +156,9 @@ const useStyles = makeStyles((colors) => ({
   noticeText: { fontSize: 14, color: colors.onBrandTertiary, lineHeight: 19 },
   noticeDismiss: { fontSize: 14, fontWeight: "700", color: colors.brandPrimary },
   error: { color: colors.error, fontSize: 14 },
+  bodyBox: { gap: 4 },
+  bodyLabel: { fontSize: 12, fontWeight: "600", color: colors.muted },
+  bodyText: { fontSize: 13, color: colors.onSurface, fontFamily: "monospace" },
   button: { backgroundColor: colors.brandPrimary, borderRadius: 12, paddingVertical: 16, alignItems: "center" },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: colors.onBrandPrimary, fontSize: 16, fontWeight: "700" },
