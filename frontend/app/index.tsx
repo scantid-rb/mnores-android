@@ -1,30 +1,41 @@
-import { View, StyleSheet, Image } from "react-native";
+// Session gate. While the session restores, show a splash. Then redirect to
+// the inventory if a session exists (even offline), otherwise to login.
 
-const EXPO_PUBLIC_BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+import { Redirect } from "expo-router";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+
+import { useSession } from "@/src/state/SessionContext";
+import { useTheme } from "@/src/theme";
 
 export default function Index() {
-  console.log(EXPO_PUBLIC_BACKEND_URL, "EXPO_PUBLIC_BACKEND_URL");
+  const { loading, token, session } = useSession();
+  const { colors } = useTheme();
 
-  return (
-    <View style={styles.container}>
-      <Image
-        source={require("../assets/images/app-image.png")}
-        style={styles.image}
-      />
-    </View>
-  );
+  if (loading) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.brandPrimary }]} testID="splash-screen">
+        <Text style={[styles.title, { color: colors.onBrandPrimary }]}>MNores Inventory</Text>
+        <ActivityIndicator color={colors.onBrandPrimary} style={{ marginTop: 16 }} />
+      </View>
+    );
+  }
+
+  // A stored session (token + metadata) lets the user in offline.
+  if (token && session) {
+    return <Redirect href="/inventory" />;
+  }
+
+  return <Redirect href="/login" />;
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0c0c0c",
     alignItems: "center",
     justifyContent: "center",
   },
-  image: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "contain",
+  title: {
+    fontSize: 24,
+    fontWeight: "800",
   },
 });

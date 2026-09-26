@@ -54,14 +54,14 @@ const light = {
   // Brand: the identity color and the fills built from it.
   // Neutral by default; replace with the design guidelines values.
   // ---------------------------------------------------------------------------
-  brand: "#111827", // base hue, anchor only; Primary, Secondary, Tertiary are weights of it
+  brand: "#0E4D64", // marine base hue
   onBrand: "#FFFFFF", // text and icons placed directly on brand
-  brandPrimary: "#111827", // primary CTA, active tab indicator, selected states
+  brandPrimary: "#0E4D64", // primary CTA, active tab indicator, selected states
   onBrandPrimary: "#FFFFFF", // text and icons on brandPrimary
-  brandSecondary: "#E5E7EB", // secondary CTA, less prominent accents
-  onBrandSecondary: "#111827", // text and icons on brandSecondary
-  brandTertiary: "#F3F4F6", // chips, tags, badges, subtle brand moments
-  onBrandTertiary: "#111827", // text and icons on brandTertiary
+  brandSecondary: "#DCEBF0", // secondary CTA, less prominent accents
+  onBrandSecondary: "#0E4D64", // text and icons on brandSecondary
+  brandTertiary: "#EEF4F7", // chips, tags, badges, subtle brand moments
+  onBrandTertiary: "#0E4D64", // text and icons on brandTertiary
 
   // ---------------------------------------------------------------------------
   // Status: semantic only, never decorative. Fill for badges, banners and
