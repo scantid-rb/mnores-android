@@ -26,23 +26,64 @@ export async function persistPhoto(sourceUri: string): Promise<string> {
 export async function uploadPartPhoto(token: string, partId: number, localPath: string): Promise<{ updated_at: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const form = new FormData();
-  form.append("photo", { uri: localPath, name: `part-${partId}.jpg`, type: "image/jpeg" } as unknown as Blob);
-  let response: Response;
+
+  let result: FileSystem.FileSystemUploadResult;
   try {
-    response = await fetch(`${API_BASE_URL}/api/photos/${partId}`, { method: "POST", headers: { Accept: "application/json", Authorization: `Bearer ${token}` }, body: form, signal: controller.signal });
+    result = await FileSystem.uploadAsync(
+      `${API_BASE_URL}/api/photos/${partId}`,
+      localPath,
+      {
+        httpMethod: "POST",
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: "photo",
+        mimeType: "image/jpeg",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
   } catch (e: unknown) {
     clearTimeout(timer);
-    if ((e as { name?: string })?.name === "AbortError") throw new ApiError("Tiempo de espera agotado", 0, "timeout");
+    if ((e as { name?: string })?.name === "AbortError") {
+      throw new ApiError("Tiempo de espera agotado", 0, "timeout");
+    }
     throw new ApiError("No se pudo subir la foto", 0, "network");
   }
+
   clearTimeout(timer);
-  const text = await response.text();
+
+  const text = result.body ?? "";
   let json: { ok?: boolean; error?: string; updated_at?: string };
-  try { json = JSON.parse(text) as typeof json; }
-  catch { throw new ApiError("Respuesta de foto no válida", response.status, "parse", text.slice(0, 300)); }
-  if (!response.ok || json.ok === false) throw new ApiError(json.error || `Error HTTP ${response.status}`, response.status, response.ok ? "api" : "http", text.slice(0, 300));
-  if (!json.updated_at) throw new ApiError("La respuesta de foto no contiene updated_at", response.status, "parse", text.slice(0, 300));
+  try {
+    json = text ? (JSON.parse(text) as typeof json) : {};
+  } catch {
+    throw new ApiError(
+      "Respuesta de foto no válida",
+      result.status,
+      "parse",
+      text.slice(0, 300),
+    );
+  }
+
+  if (result.status < 200 || result.status >= 300 || json.ok === false) {
+    throw new ApiError(
+      json.error || `Error HTTP ${result.status}`,
+      result.status,
+      result.status >= 200 && result.status < 300 ? "api" : "http",
+      text.slice(0, 300),
+    );
+  }
+
+  if (!json.updated_at) {
+    throw new ApiError(
+      "La respuesta de foto no contiene updated_at",
+      result.status,
+      "parse",
+      text.slice(0, 300),
+    );
+  }
+
   return { updated_at: json.updated_at };
 }
 
