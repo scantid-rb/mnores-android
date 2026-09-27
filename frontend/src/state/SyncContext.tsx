@@ -79,7 +79,22 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     setLastError(null);
     try {
       const summary: SyncSummary = await runSync(token);
-      if (summary.diagnostics) setDiagnostics(summary.diagnostics);
+      if (summary.diagnostics) {
+        setDiagnostics(summary.diagnostics);
+      } else if (summary.serverError || summary.failed > 0) {
+        setDiagnostics({
+          path: "/api/parts/push",
+          method: "POST",
+          httpStatus: null,
+          kind: "unexpected",
+          timeout: false,
+          fetchError: false,
+          parseOk: true,
+          bodySnippet: "La sincronización terminó con error pero no devolvió diagnóstico.",
+          classification: "missing_diagnostic",
+          at: new Date().toISOString(),
+        });
+      }
       if (summary.authError) {
         await signOut();
         return;
