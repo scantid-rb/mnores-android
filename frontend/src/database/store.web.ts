@@ -77,6 +77,12 @@ class WebStore implements LocalStore {
   async clearSession(): Promise<void> {
     await storage.removeItem(K.session);
   }
+  async clearUserData(): Promise<void> {
+    await storage.removeItem(K.parts);
+    await storage.removeItem(K.queue);
+    await storage.removeItem(K.boats);
+    await storage.removeItem(K.categories);
+  }
   async setLastSyncAt(serverTime: string): Promise<void> {
     const s = await this.getSession();
     if (s) {
