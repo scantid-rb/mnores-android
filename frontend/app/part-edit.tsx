@@ -66,7 +66,7 @@ export default function PartEditScreen() {
   const boatName = useMemo(() => {
     const bId = isEdit ? existing?.boat_id : (boatId ?? user?.boat_id);
     return boats.find((b) => b.id === bId)?.name ?? (bId != null ? `ID ${bId}` : "—");
-  }, [boats, existing, user, isEdit]);
+  }, [boats, existing, user, isEdit, boatId]);
 
   const parsedQty = Math.max(0, parseInt(quantity || "0", 10) || 0);
 
