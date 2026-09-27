@@ -6,8 +6,8 @@
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL as string;
 
 // The mobile app version is independent from the backend API version.
-export const APP_VERSION = "0.1.0";
-export const API_VERSION = "1.4.2";
+export const APP_VERSION = "0.1.2";
+export const API_VERSION = "1.4.3";
 
 // Bounded network timeout for a single request.
 export const REQUEST_TIMEOUT_MS = 15000;
