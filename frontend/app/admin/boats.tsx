@@ -30,6 +30,7 @@ export default function BoatsAdminScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const allowed = user?.role === "admin" || user?.role === "inspector";
+  const canDelete = user?.role === "admin";
 
   useEffect(() => {
     if (!allowed) router.replace("/inventory");
@@ -262,13 +263,15 @@ export default function BoatsAdminScreen() {
                 </Text>
               </Pressable>
 
-              <Pressable
-                style={[styles.deleteButton, !online && styles.disabledButton]}
-                onPress={() => deleteBoat(boat)}
-                disabled={!online || saving}
-              >
-                <Text style={styles.deleteButtonText}>Eliminar</Text>
-              </Pressable>
+              {canDelete && (
+                <Pressable
+                  style={[styles.deleteButton, !online && styles.disabledButton]}
+                  onPress={() => deleteBoat(boat)}
+                  disabled={!online || saving}
+                >
+                  <Text style={styles.deleteButtonText}>Eliminar</Text>
+                </Pressable>
+              )}
             </View>
           </View>
         ))}
