@@ -17,7 +17,7 @@ export function canEditFields(role: Role | undefined): boolean {
   return role === "chief_engineer" || role === "admin" || role === "inspector";
 }
 
-// Change quantity (chief_engineer and mechanic).
+// Change quantity (all roles allowed to edit inventory).
 export function canEditQuantity(role: Role | undefined): boolean {
-  return role === "chief_engineer" || role === "mechanic";
+  return role === "chief_engineer" || role === "mechanic" || role === "admin" || role === "inspector";
 }
