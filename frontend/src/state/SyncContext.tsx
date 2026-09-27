@@ -30,6 +30,8 @@ interface SyncContextValue {
   syncNow: () => Promise<void>;
   refreshPending: () => Promise<void>;
   clearConflictNotice: () => void;
+  receivedParts: number;
+  cachedParts: number;
 }
 
 const SyncContext = createContext<SyncContextValue | undefined>(undefined);
@@ -59,6 +61,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [lastError, setLastError] = useState<string | null>(null);
   const [conflictNotice, setConflictNotice] = useState(false);
   const [diagnostics, setDiagnostics] = useState<SyncDiagnostics | null>(null);
+  const [receivedParts, setReceivedParts] = useState(0);
+  const [cachedParts, setCachedParts] = useState(0);
 
   const running = useRef(false);
   const prevOnline = useRef(online);
@@ -79,6 +83,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     setLastError(null);
     try {
       const summary: SyncSummary = await runSync(token);
+      setReceivedParts(summary.receivedParts);
+      setCachedParts(summary.cachedParts);
       if (summary.diagnostics) {
         setDiagnostics(summary.diagnostics);
       } else if (summary.serverError || summary.failed > 0) {
@@ -138,11 +144,13 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       lastError,
       conflictNotice,
       diagnostics,
+      receivedParts,
+      cachedParts,
       syncNow,
       refreshPending,
       clearConflictNotice: () => setConflictNotice(false),
     }),
-    [status, pendingCount, lastError, conflictNotice, diagnostics, syncNow, refreshPending],
+    [status, pendingCount, lastError, conflictNotice, diagnostics, receivedParts, cachedParts, syncNow, refreshPending],
   );
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;
