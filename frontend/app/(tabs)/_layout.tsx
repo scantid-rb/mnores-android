@@ -62,6 +62,15 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="admin"
+        options={{
+          title: "Administración",
+          href: user.role === "admin" || user.role === "inspector" ? "/admin" : null,
+          tabBarIcon: () => null,
+          tabBarLabel: ({ focused }) => <TabLabel label="Administración" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: "Perfil",
