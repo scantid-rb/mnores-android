@@ -29,8 +29,12 @@ export async function apiGetMe(token: string): Promise<SessionUser> {
   return r.user;
 }
 
-export async function apiGetSync(token: string): Promise<SyncResponse> {
-  return apiRequest<SyncResponse>("/api/sync", { token });
+// GET /api/sync — without since performs a full sync; with since returns only changes.
+export async function apiGetSync(token: string, since?: string | null): Promise<SyncResponse> {
+  const path = since
+    ? `/api/sync?since=${encodeURIComponent(since)}`
+    : "/api/sync";
+  return apiRequest<SyncResponse>(path, { token });
 }
 
 // POST /api/parts/push — batch of create/update/delete changes.
