@@ -1,4 +1,4 @@
-// Tab navigator (Android-first). Classic expo-router Tabs with 3 tabs.
+// Tab navigator (Android-first). Classic expo-router Tabs with 4 tabs.
 // Guards the tab area: if there is no session, redirect to login.
 
 import { Redirect, Tabs } from "expo-router";
@@ -30,6 +30,8 @@ export default function TabsLayout() {
   if (!token || !session) {
     return <Redirect href="/login" />;
   }
+
+  const isAdminRole = session.role === "admin" || session.role === "inspector";
 
   return (
     <Tabs
@@ -65,7 +67,7 @@ export default function TabsLayout() {
         name="admin"
         options={{
           title: "Administración",
-          href: user.role === "admin" || user.role === "inspector" ? "/admin" : null,
+          href: isAdminRole ? "/admin" : null,
           tabBarIcon: () => null,
           tabBarLabel: ({ focused }) => <TabLabel label="Administración" focused={focused} />,
         }}
