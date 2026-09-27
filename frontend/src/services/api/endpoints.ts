@@ -94,3 +94,11 @@ export async function apiToggleBoat(token: string, id: number): Promise<import("
   });
   return r.boat;
 }
+
+export async function apiDeleteBoat(token: string, id: number): Promise<void> {
+  await apiRequest<{ ok: boolean; deleted?: boolean }>("/api/boats", {
+    method: "POST",
+    token,
+    body: { action: "delete", id },
+  });
+}
