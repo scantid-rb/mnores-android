@@ -34,6 +34,8 @@ interface SyncContextValue {
   receivedActiveParts: number;
   receivedDeletedParts: number;
   cachedParts: number;
+  protectedIds: number[];
+  missingActiveIds: number[];
 }
 
 const SyncContext = createContext<SyncContextValue | undefined>(undefined);
@@ -67,6 +69,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [receivedActiveParts, setReceivedActiveParts] = useState(0);
   const [receivedDeletedParts, setReceivedDeletedParts] = useState(0);
   const [cachedParts, setCachedParts] = useState(0);
+  const [protectedIds, setProtectedIds] = useState<number[]>([]);
+  const [missingActiveIds, setMissingActiveIds] = useState<number[]>([]);
 
   const running = useRef(false);
   const prevOnline = useRef(online);
@@ -91,6 +95,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       setReceivedActiveParts(summary.receivedActiveParts);
       setReceivedDeletedParts(summary.receivedDeletedParts);
       setCachedParts(summary.cachedParts);
+      setProtectedIds(summary.protectedIds);
+      setMissingActiveIds(summary.missingActiveIds);
       if (summary.diagnostics) {
         setDiagnostics(summary.diagnostics);
       } else if (summary.serverError || summary.failed > 0) {
@@ -154,11 +160,13 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       receivedActiveParts,
       receivedDeletedParts,
       cachedParts,
+      protectedIds,
+      missingActiveIds,
       syncNow,
       refreshPending,
       clearConflictNotice: () => setConflictNotice(false),
     }),
-    [status, pendingCount, lastError, conflictNotice, diagnostics, receivedParts, receivedActiveParts, receivedDeletedParts, cachedParts, syncNow, refreshPending],
+    [status, pendingCount, lastError, conflictNotice, diagnostics, receivedParts, receivedActiveParts, receivedDeletedParts, cachedParts, protectedIds, missingActiveIds, syncNow, refreshPending],
   );
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;
