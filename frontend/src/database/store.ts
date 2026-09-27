@@ -187,17 +187,20 @@ class SqliteStore implements LocalStore {
           await db.runAsync("DELETE FROM parts WHERE server_id = ?;", [p.id]);
           continue;
         }
+        // Match by server_id first. If an older/local row already owns the
+        // canonical server row_uid (srv-<id>), reuse that row instead of
+        // attempting a second INSERT and violating the row_uid PRIMARY KEY.
         const existing = await db.getFirstAsync<{ row_uid: string }>(
-          "SELECT row_uid FROM parts WHERE server_id = ?;",
-          [p.id],
+          "SELECT row_uid FROM parts WHERE server_id = ? OR row_uid = ? LIMIT 1;",
+          [p.id, `srv-${p.id}`],
         );
         if (existing) {
           await db.runAsync(
-            `UPDATE parts SET name=?, reference=?, category_id=?, location=?, quantity=?, notes=?, photo_path=?, updated_at=?, deleted_at=?, pending_delete=0, sync_state='synced' WHERE server_id=?;`,
+            `UPDATE parts SET server_id=?, local_id=NULL, boat_id=?, name=?, reference=?, category_id=?, location=?, quantity=?, notes=?, photo_path=?, updated_at=?, deleted_at=?, pending_delete=0, sync_state='synced' WHERE row_uid=?;`,
             [
-              p.name, p.reference ?? null, p.category_id ?? null, p.location ?? null,
-              p.quantity ?? 0, p.notes ?? null, p.photo_path ?? null, p.updated_at ?? null,
-              p.deleted_at ?? null, p.id,
+              p.id, p.boat_id, p.name, p.reference ?? null, p.category_id ?? null,
+              p.location ?? null, p.quantity ?? 0, p.notes ?? null, p.photo_path ?? null,
+              p.updated_at ?? null, p.deleted_at ?? null, existing.row_uid,
             ],
           );
         } else {
