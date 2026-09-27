@@ -4,6 +4,8 @@
 // the existing local cache.
 
 import { ApiError } from "@/src/services/api/client";
+import { uploadPartPhoto } from "@/src/services/photos/photoService";
+import * as FileSystem from "expo-file-system/legacy";
 import { apiGetSync, apiPush } from "@/src/services/api/endpoints";
 import { localStore } from "@/src/database/store";
 import { LocalPart, Part, PendingChange, PushChange, PushResult } from "@/src/types";
@@ -226,6 +228,36 @@ async function processQueue(token: string): Promise<SyncSummary> {
   return summary;
 }
 
+async function processPhotoQueue(token: string, summary: SyncSummary): Promise<void> {
+  const photos = await localStore.getPendingPhotos();
+  for (const photo of photos) {
+    if (photo.server_id == null) continue;
+    const info = await FileSystem.getInfoAsync(photo.local_path);
+    if (!info.exists) {
+      await localStore.markPhotoRetry(photo.queue_id, "archivo local de foto no encontrado");
+      continue;
+    }
+    try {
+      const result = await uploadPartPhoto(token, photo.server_id, photo.local_path);
+      await localStore.applyPhotoOk(photo.row_uid, result.updated_at);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 401 || e.status === 403) {
+          summary.authError = true;
+          return;
+        }
+        if (e.kind === "network" || e.kind === "timeout") {
+          summary.networkError = true;
+          return;
+        }
+        await localStore.markPhotoRetry(photo.queue_id, `HTTP ${e.status} (${e.kind})`);
+      } else {
+        await localStore.markPhotoRetry(photo.queue_id, "error inesperado al subir foto");
+      }
+    }
+  }
+}
+
 function mergeById<T extends { id: number }>(current: T[], delta: T[]): T[] {
   const merged = new Map<number, T>();
   for (const row of current) merged.set(row.id, row);
@@ -299,6 +331,9 @@ export async function pullAndReconcile(token: string): Promise<void> {
 
 export async function runSync(token: string): Promise<SyncSummary> {
   const summary = await processQueue(token);
+  if (summary.authError || summary.networkError) return summary;
+
+  await processPhotoQueue(token, summary);
   if (summary.authError || summary.networkError) return summary;
 
   // A logical rejection is an API-level result inside HTTP 200. Keep a
