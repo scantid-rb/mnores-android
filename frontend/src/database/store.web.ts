@@ -113,10 +113,46 @@ class WebStore implements LocalStore {
     for (const p of data.parts) {
       if (protectedSet.has(p.id)) continue;
       if (p.deleted_at) {
-        // A tombstone from the server removes the cached row.
+        // A tombstone removes every cached duplicate for this server id.
+        const withoutDeleted = kept.filter((row) => row.server_id !== p.id);
+        kept.length = 0;
+        kept.push(...withoutDeleted);
         continue;
       }
-      if (keptServerIds.has(p.id)) continue;
+
+      // Repair any duplicate local rows for the same canonical server id.
+      const matches = kept.filter((row) => row.server_id === p.id);
+      if (matches.length > 0) {
+        const canonical =
+          matches.find((row) => row.row_uid === `srv-${p.id}`) ??
+          matches.find((row) => row.sync_state === "synced") ??
+          matches[0];
+        const canonicalIndex = kept.findIndex((row) => row.row_uid === canonical.row_uid);
+        kept[canonicalIndex] = {
+          ...canonical,
+          server_id: p.id,
+          local_id: null,
+          boat_id: p.boat_id,
+          name: p.name,
+          reference: p.reference ?? null,
+          category_id: p.category_id ?? null,
+          location: p.location ?? null,
+          quantity: p.quantity ?? 0,
+          notes: p.notes ?? null,
+          photo_path: p.photo_path ?? null,
+          updated_at: p.updated_at ?? null,
+          deleted_at: p.deleted_at ?? null,
+          pending_delete: 0,
+          sync_state: "synced",
+        };
+        const duplicateUids = new Set(matches.map((row) => row.row_uid));
+        duplicateUids.delete(canonical.row_uid);
+        for (let i = kept.length - 1; i >= 0; i--) {
+          if (duplicateUids.has(kept[i].row_uid)) kept.splice(i, 1);
+        }
+        continue;
+      }
+
       kept.push({
         row_uid: `srv-${p.id}`,
         server_id: p.id,
