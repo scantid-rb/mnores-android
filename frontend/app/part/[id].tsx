@@ -5,11 +5,16 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
+import { Image } from "expo-image";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useCategories, usePart } from "@/src/hooks/useInventory";
 import { useDeletePart, useUpdatePart } from "@/src/hooks/usePartMutations";
 import { useSession } from "@/src/state/SessionContext";
+import { localStore } from "@/src/database/store";
+import { pickPartPhoto, remotePartPhotoUrl } from "@/src/services/photos/photoService";
+import { useSync } from "@/src/state/SyncContext";
 import { makeStyles, useTheme } from "@/src/theme";
 import { SyncState } from "@/src/types";
 import { canDeletePart, canEditFields, canEditQuantity } from "@/src/utils/permissions";
@@ -27,16 +32,20 @@ export default function PartDetailScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const { id } = useLocalSearchParams<{ id: string }>();
   const rowUid = String(id);
   const { data: part, isLoading } = usePart(rowUid);
   const { data: categories = [] } = useCategories();
-  const { user } = useSession();
+  const { user, token } = useSession();
+  const { syncNow } = useSync();
 
   const updatePart = useUpdatePart();
   const deletePart = useDeletePart();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   const categoryName =
     part?.category_id != null ? categories.find((c) => c.id === part.category_id)?.name ?? "—" : "—";
@@ -55,6 +64,23 @@ export default function PartDetailScreen() {
   const onDelete = () => {
     deletePart.mutate(rowUid, { onSuccess: () => router.back() });
   };
+  const attachPhoto = async (source: "camera" | "library") => {
+    if (!part) return;
+    setPhotoBusy(true);
+    setPhotoError(null);
+    try {
+      const localPath = await pickPartPhoto(source);
+      if (!localPath) return;
+      await localStore.setLocalPhoto(rowUid, localPath);
+      await queryClient.invalidateQueries({ queryKey: ["part", rowUid] });
+      await syncNow();
+    } catch (e) {
+      setPhotoError(e instanceof Error ? e.message : "No se pudo preparar la foto.");
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
 
   const syncColor =
     part?.sync_state === "error" || part?.sync_state === "conflict"
@@ -116,7 +142,33 @@ export default function PartDetailScreen() {
             </View>
 
             <View style={styles.card}>
-              <Field label="Foto" value={part.photo_path ? "Adjunta" : "Sin foto"} />
+              {part.local_photo_path || part.photo_path ? (
+                <Image
+                  source={
+                    part.local_photo_path
+                      ? { uri: part.local_photo_path }
+                      : token && part.server_id
+                        ? { uri: remotePartPhotoUrl(part.server_id), headers: { Authorization: `Bearer ${token}` } }
+                        : undefined
+                  }
+                  style={styles.photo}
+                  contentFit="cover"
+                />
+              ) : (
+                <Text style={styles.muted}>Sin foto</Text>
+              )}
+              {canEdit && (
+                <View style={styles.photoActions}>
+                  <Pressable style={styles.photoBtn} onPress={() => void attachPhoto("camera")} disabled={photoBusy}>
+                    <Text style={styles.photoBtnText}>{photoBusy ? "Procesando…" : "📷 Cámara"}</Text>
+                  </Pressable>
+                  <Pressable style={styles.photoBtn} onPress={() => void attachPhoto("library")} disabled={photoBusy}>
+                    <Text style={styles.photoBtnText}>🖼️ Galería</Text>
+                  </Pressable>
+                </View>
+              )}
+              {!!photoError && <Text style={styles.error}>{photoError}</Text>}
+              <Field label="Foto" value={part.photo_path || part.local_photo_path ? "Adjunta" : "Sin foto"} />
               <Field
                 label="Actualizado"
                 value={part.updated_at ? new Date(part.updated_at).toLocaleString() : "—"}
@@ -187,6 +239,11 @@ const useStyles = makeStyles((colors) => ({
   qtyCenter: { alignItems: "center", minWidth: 90 },
   qtyValue: { fontSize: 44, fontWeight: "800", color: colors.brandPrimary },
   qtyLabel: { fontSize: 14, color: colors.muted },
+  photo: { width: "100%", height: 220, borderRadius: 12 },
+  photoActions: { flexDirection: "row", gap: 10 },
+  photoBtn: { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingVertical: 12, alignItems: "center" },
+  photoBtnText: { fontSize: 14, fontWeight: "700", color: colors.onSurface },
+  error: { color: colors.error, fontSize: 13 },
   card: {
     backgroundColor: colors.surfaceSecondary,
     borderRadius: 16,
