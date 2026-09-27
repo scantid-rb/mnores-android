@@ -72,21 +72,6 @@ function matchResult(entry: PendingChange, results: PushResult[]): PushResult | 
   return results.find((r) => r.action === entry.action && r.id === entry.entity_id);
 }
 
-function successDiag(): SyncDiagnostics {
-  return {
-    path: "/api/parts/push",
-    method: "POST",
-    httpStatus: 200,
-    kind: "ok",
-    timeout: false,
-    fetchError: false,
-    parseOk: true,
-    bodySnippet: null,
-    classification: "ok",
-    at: new Date().toISOString(),
-  };
-}
-
 function errorDiag(e: ApiError, path = "/api/parts/push", method = "POST"): SyncDiagnostics {
   const isAuth = e.status === 401 || e.status === 403;
   return {
