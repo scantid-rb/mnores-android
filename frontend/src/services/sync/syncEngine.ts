@@ -6,7 +6,7 @@
 import { ApiError } from "@/src/services/api/client";
 import { apiGetSync, apiPush } from "@/src/services/api/endpoints";
 import { localStore } from "@/src/database/store";
-import { Boat, Category, Part, PendingChange, PushChange, PushResult } from "@/src/types";
+import { PendingChange, PushChange, PushResult } from "@/src/types";
 
 export interface SyncDiagnostics {
   path: string;
@@ -205,7 +205,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
     }
   }
 
-  summary.diagnostics = errDiag ?? lastDiag;
+  // Preserve a logical API rejection diagnostic; a later HTTP-200 success must not overwrite it.\n  summary.diagnostics = errDiag ?? summary.diagnostics ?? lastDiag;
   return summary;
 }
 
