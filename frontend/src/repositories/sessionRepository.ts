@@ -21,7 +21,22 @@ export const sessionRepository = {
     username: string,
     password: string,
   ): Promise<{ token: string; user: SessionUser }> {
+    const previous = await localStore.getSession();
     const { token, user } = await apiLogin(username, password);
+
+    // Never carry inventory or queued mutations across users. A changed
+    // identity, role, or assigned boat starts from a clean local dataset.
+    const switchedUser =
+      previous != null &&
+      (previous.id !== user.id ||
+        previous.username !== user.username ||
+        previous.role !== user.role ||
+        previous.boat_id !== user.boat_id);
+
+    if (switchedUser) {
+      await localStore.clearUserData();
+    }
+
     await storage.secureSet(TOKEN_KEY, token);
     await localStore.saveSession(user);
     return { token, user };
