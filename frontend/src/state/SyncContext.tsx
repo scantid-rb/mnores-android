@@ -73,6 +73,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [missingActiveIds, setMissingActiveIds] = useState<number[]>([]);
 
   const running = useRef(false);
+  const rerunRequested = useRef(false);
   const prevOnline = useRef(online);
 
   const refreshPending = useCallback(async () => {
@@ -81,7 +82,12 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   const syncNow = useCallback(async () => {
     if (!token) return;
-    if (running.current) return; // guard against concurrent passes
+    if (running.current) {
+      // A mutation may finish while an automatic sync is still running.
+      // Do not silently discard the requested refresh; queue one extra pass.
+      rerunRequested.current = true;
+      return;
+    }
     if (!online) {
       await refreshPending();
       return;
@@ -131,6 +137,11 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     } finally {
       running.current = false;
       await refreshPending();
+
+      if (rerunRequested.current && token && online) {
+        rerunRequested.current = false;
+        void syncNow();
+      }
     }
   }, [token, online, signOut, refreshSession, refreshPending]);
 
