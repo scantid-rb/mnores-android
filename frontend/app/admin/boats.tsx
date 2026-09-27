@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { StatusBadge } from "@/src/components/StatusBadge";
 import { useBoats } from "@/src/hooks/useInventory";
-import { apiCreateBoat, apiToggleBoat, apiUpdateBoat } from "@/src/services/api/endpoints";
+import { apiCreateBoat, apiDeleteBoat, apiToggleBoat, apiUpdateBoat } from "@/src/services/api/endpoints";
 import { useConnectivity } from "@/src/services/sync/connectivity";
 import { useSession } from "@/src/state/SessionContext";
 import { useSync } from "@/src/state/SyncContext";
@@ -109,6 +109,35 @@ export default function BoatsAdminScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const deleteBoat = (boat: Boat) => {
+    if (!token || !online || saving) return;
+
+    Alert.alert(
+      "Eliminar barco",
+      `¿Quieres eliminar físicamente «${boat.name}»? Esta acción solo está permitida si el barco no tiene usuarios ni repuestos asociados.`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            setSaving(true);
+            setError(null);
+            try {
+              await apiDeleteBoat(token, boat.id);
+              if (editingId === boat.id) resetForm();
+              await syncNow();
+            } catch (e) {
+              setError(e instanceof Error ? e.message : "No se pudo eliminar el barco.");
+            } finally {
+              setSaving(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   if (!allowed) return null;
@@ -231,6 +260,14 @@ export default function BoatsAdminScreen() {
                 <Text style={styles.secondaryButtonText}>
                   {boat.is_active === 1 ? "Desactivar" : "Activar"}
                 </Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.deleteButton, !online && styles.disabledButton]}
+                onPress={() => deleteBoat(boat)}
+                disabled={!online || saving}
+              >
+                <Text style={styles.deleteButtonText}>Eliminar</Text>
               </Pressable>
             </View>
           </View>
@@ -359,6 +396,16 @@ const useStyles = makeStyles((colors) => ({
     backgroundColor: colors.surfaceTertiary,
   },
   secondaryButtonText: { fontSize: 13, fontWeight: "700", color: colors.onSurface },
+  deleteButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+    backgroundColor: colors.surfaceTertiary,
+  },
+  deleteButtonText: { fontSize: 13, fontWeight: "700", color: colors.error },
   empty: { paddingVertical: 20, textAlign: "center", color: colors.muted },
   footerNote: { marginTop: 4, fontSize: 12, lineHeight: 17, color: colors.muted },
 }));
