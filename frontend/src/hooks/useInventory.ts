@@ -5,10 +5,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import { inventoryRepository } from "@/src/repositories/inventoryRepository";
 
-export function useParts(query: string, categoryId: number | null) {
+export function useParts(query: string, categoryId: number | null, boatId: number | null = null) {
   return useQuery({
-    queryKey: ["parts", query, categoryId],
-    queryFn: () => inventoryRepository.searchParts(query, categoryId),
+    queryKey: ["parts", query, categoryId, boatId],
+    queryFn: () => inventoryRepository.searchParts(query, categoryId, boatId),
   });
 }
 
