@@ -1,4 +1,4 @@
-// Typed wrappers for the specific API 1.4.2 endpoints. Do NOT invent endpoints.
+// Typed wrappers for the specific API 1.4.3 endpoints. Do NOT invent endpoints.
 
 import { apiRequest } from "@/src/services/api/client";
 import { PushChange, PushResponse, SessionUser, SyncResponse } from "@/src/types";
