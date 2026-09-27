@@ -33,6 +33,8 @@ export interface SyncSummary {
   networkError: boolean;
   serverError: boolean;
   diagnostics: SyncDiagnostics | null;
+  receivedParts: number;
+  cachedParts: number;
 }
 
 function buildChange(entry: PendingChange): PushChange {
@@ -119,6 +121,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
   const summary: SyncSummary = {
     pushed: 0, ok: 0, conflicts: 0, failed: 0, notFound: 0,
     authError: false, networkError: false, serverError: false, diagnostics: null,
+    receivedParts: 0, cachedParts: 0,
   };
 
   const pending = await localStore.getPendingChanges();
@@ -291,7 +294,7 @@ function mergeParts(current: LocalPart[], delta: Part[]): Part[] {
   return mergeById(currentServerParts, delta);
 }
 
-export async function pullAndReconcile(token: string): Promise<void> {
+export async function pullAndReconcile(token: string): Promise<{ receivedParts: number; cachedParts: number }> {
   const session = await localStore.getSession();
   const lastSyncAt = session?.last_sync_at ?? null;
 
@@ -327,6 +330,8 @@ export async function pullAndReconcile(token: string): Promise<void> {
   // Advance the cursor only after the complete reconciliation transaction
   // succeeds. The cursor is the server-provided time, never the device clock.
   await localStore.setLastSyncAt(sync.server_time);
+  const counts = await localStore.getCounts();
+  return { receivedParts: sync.parts?.length ?? 0, cachedParts: counts.parts };
 }
 
 export async function runSync(token: string): Promise<SyncSummary> {
@@ -352,7 +357,9 @@ export async function runSync(token: string): Promise<SyncSummary> {
   }
 
   try {
-    await pullAndReconcile(token);
+    const syncStats = await pullAndReconcile(token);
+    summary.receivedParts = syncStats.receivedParts;
+    summary.cachedParts = syncStats.cachedParts;
   } catch (e) {
     if (e instanceof ApiError && (e.kind === "network" || e.kind === "timeout")) {
       summary.networkError = true;
