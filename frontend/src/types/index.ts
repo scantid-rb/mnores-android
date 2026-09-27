@@ -65,6 +65,19 @@ export interface SessionRow {
 
 export type SyncState = "synced" | "pending" | "syncing" | "error" | "conflict";
 
+export type PhotoQueueStatus = "pending" | "uploading" | "failed";
+
+export interface PendingPhoto {
+  queue_id: string;
+  row_uid: string;
+  server_id: number | null;
+  local_path: string;
+  retry_count: number;
+  last_error: string | null;
+  status: PhotoQueueStatus;
+  created_at: string;
+}
+
 export interface LocalPart {
   row_uid: string;
   server_id: number | null;
