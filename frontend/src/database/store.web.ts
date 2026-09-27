@@ -93,7 +93,9 @@ class WebStore implements LocalStore {
     await writeJson(K.categories, data.categories);
 
     const protectedSet = new Set(protectedServerIds);
-    const serverIds = new Set(data.parts.map((p) => p.id));
+    // Tombstones are authoritative deletions. Protected rows remain untouched
+    // until their pending operation is resolved.
+    const serverIds = new Set(data.parts.filter((p) => !p.deleted_at).map((p) => p.id));
     const local = await this.parts();
 
     // Keep protected rows and pending-create rows (server_id null).
@@ -103,7 +105,12 @@ class WebStore implements LocalStore {
     const keptServerIds = new Set(kept.filter((p) => p.server_id != null).map((p) => p.server_id));
 
     for (const p of data.parts) {
-      if (protectedSet.has(p.id) || keptServerIds.has(p.id)) continue;
+      if (protectedSet.has(p.id)) continue;
+      if (p.deleted_at) {
+        // A tombstone from the server removes the cached row.
+        continue;
+      }
+      if (keptServerIds.has(p.id)) continue;
       kept.push({
         row_uid: `srv-${p.id}`,
         server_id: p.id,
