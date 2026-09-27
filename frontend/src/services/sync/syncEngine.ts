@@ -6,7 +6,7 @@
 import { ApiError } from "@/src/services/api/client";
 import { apiGetSync, apiPush } from "@/src/services/api/endpoints";
 import { localStore } from "@/src/database/store";
-import { PendingChange, PushChange, PushResult } from "@/src/types";
+import { LocalPart, Part, PendingChange, PushChange, PushResult } from "@/src/types";
 
 export interface SyncDiagnostics {
   path: string;
@@ -233,6 +233,32 @@ function mergeById<T extends { id: number }>(current: T[], delta: T[]): T[] {
   return Array.from(merged.values());
 }
 
+function localPartToServerPart(part: LocalPart): Part | null {
+  if (part.server_id == null) return null;
+  return {
+    id: part.server_id,
+    boat_id: part.boat_id,
+    name: part.name,
+    reference: part.reference,
+    category_id: part.category_id,
+    location: part.location,
+    quantity: part.quantity,
+    notes: part.notes,
+    photo_path: part.photo_path,
+    updated_at: part.updated_at,
+    deleted_at: part.deleted_at,
+  };
+}
+
+function mergeParts(current: LocalPart[], delta: Part[]): Part[] {
+  // Incremental reconciliation uses the server_id as the canonical identity.
+  // row_uid is a local persistence key and must never be used as the server id.
+  const currentServerParts = current
+    .map(localPartToServerPart)
+    .filter((part): part is Part => part !== null);
+  return mergeById(currentServerParts, delta);
+}
+
 export async function pullAndReconcile(token: string): Promise<void> {
   const session = await localStore.getSession();
   const lastSyncAt = session?.last_sync_at ?? null;
@@ -258,7 +284,7 @@ export async function pullAndReconcile(token: string): Promise<void> {
 
     const boats = mergeById(currentBoats, sync.boats ?? []);
     const categories = mergeById(currentCategories, sync.categories ?? []);
-    const parts = mergeById(currentParts, sync.parts ?? []);
+    const parts = mergeParts(currentParts, sync.parts ?? []);
 
     await localStore.reconcileInventory(
       { boats, categories, parts },
