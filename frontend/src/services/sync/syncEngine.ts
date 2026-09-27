@@ -258,6 +258,23 @@ export async function runSync(token: string): Promise<SyncSummary> {
   const summary = await processQueue(token);
   if (summary.authError || summary.networkError) return summary;
 
+  // A logical rejection is an API-level result inside HTTP 200. Keep a
+  // diagnostic even if a future queue-path change fails to attach one.
+  if (summary.failed > 0 && !summary.diagnostics) {
+    summary.diagnostics = {
+      path: "/api/parts/push",
+      method: "POST",
+      httpStatus: 200,
+      kind: "api_result",
+      timeout: false,
+      fetchError: false,
+      parseOk: true,
+      bodySnippet: "El servidor devolvió al menos un resultado con status no aceptado.",
+      classification: "api_result",
+      at: new Date().toISOString(),
+    };
+  }
+
   try {
     await pullAndReconcile(token);
   } catch (e) {
