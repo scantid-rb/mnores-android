@@ -183,6 +183,23 @@ async function processQueue(token: string): Promise<SyncSummary> {
       case "invalid":
       default:
         summary.failed++;
+        summary.diagnostics = {
+          path: "/api/parts/push",
+          method: "POST",
+          httpStatus: 200,
+          kind: "api_result",
+          timeout: false,
+          fetchError: false,
+          parseOk: true,
+          bodySnippet: JSON.stringify({
+            action: res.action,
+            id: res.id ?? null,
+            local_id: res.local_id ?? null,
+            status: res.status,
+          }),
+          classification: res.status,
+          at: new Date().toISOString(),
+        };
         await localStore.markFailed(entry.queue_id, entry.row_uid, res.status);
         break;
     }
