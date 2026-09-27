@@ -34,6 +34,8 @@ export interface SyncSummary {
   serverError: boolean;
   diagnostics: SyncDiagnostics | null;
   receivedParts: number;
+  receivedActiveParts: number;
+  receivedDeletedParts: number;
   cachedParts: number;
 }
 
@@ -121,7 +123,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
   const summary: SyncSummary = {
     pushed: 0, ok: 0, conflicts: 0, failed: 0, notFound: 0,
     authError: false, networkError: false, serverError: false, diagnostics: null,
-    receivedParts: 0, cachedParts: 0,
+    receivedParts: 0, receivedActiveParts: 0, receivedDeletedParts: 0, cachedParts: 0,
   };
 
   const pending = await localStore.getPendingChanges();
@@ -331,7 +333,13 @@ export async function pullAndReconcile(token: string): Promise<{ receivedParts: 
   // succeeds. The cursor is the server-provided time, never the device clock.
   await localStore.setLastSyncAt(sync.server_time);
   const counts = await localStore.getCounts();
-  return { receivedParts: sync.parts?.length ?? 0, cachedParts: counts.parts };
+  const receivedParts = sync.parts ?? [];
+  return {
+    receivedParts: receivedParts.length,
+    receivedActiveParts: receivedParts.filter((p) => !p.deleted_at).length,
+    receivedDeletedParts: receivedParts.filter((p) => !!p.deleted_at).length,
+    cachedParts: counts.parts,
+  };
 }
 
 export async function runSync(token: string): Promise<SyncSummary> {
@@ -359,6 +367,8 @@ export async function runSync(token: string): Promise<SyncSummary> {
   try {
     const syncStats = await pullAndReconcile(token);
     summary.receivedParts = syncStats.receivedParts;
+    summary.receivedActiveParts = syncStats.receivedActiveParts;
+    summary.receivedDeletedParts = syncStats.receivedDeletedParts;
     summary.cachedParts = syncStats.cachedParts;
   } catch (e) {
     if (e instanceof ApiError && (e.kind === "network" || e.kind === "timeout")) {
