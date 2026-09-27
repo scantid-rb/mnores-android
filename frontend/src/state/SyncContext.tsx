@@ -100,6 +100,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   // Initial pass on mount (once we have a token and are online).
   useEffect(() => {
+    // Initial async hydration/sync is intentionally started from the effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refreshPending();
     if (token && online) void syncNow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
