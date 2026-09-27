@@ -220,6 +220,7 @@ class SqliteStore implements LocalStore {
         if (protectedSet.has(p.id)) continue;
         if (p.deleted_at) {
           // A tombstone removes every stale local duplicate for this server id.
+          await db.runAsync("DELETE FROM photo_queue WHERE server_id = ?;", [p.id]);
           await db.runAsync("DELETE FROM parts WHERE server_id = ?;", [p.id]);
           continue;
         }
@@ -512,8 +513,9 @@ class SqliteStore implements LocalStore {
   async applyDeleteOk(queueId: string, serverId: number): Promise<void> {
     const db = await getDb();
     await db.withTransactionAsync(async () => {
+      const row = await db.getFirstAsync<{ row_uid: string }>("SELECT row_uid FROM parts WHERE server_id = ? LIMIT 1;", [serverId]);
+      await db.runAsync("DELETE FROM photo_queue WHERE server_id = ? OR row_uid = ?;", [serverId, row?.row_uid ?? ""]);
       await db.runAsync("DELETE FROM parts WHERE server_id = ?;", [serverId]);
-      await db.runAsync("DELETE FROM photo_queue WHERE server_id = ? OR row_uid NOT IN (SELECT row_uid FROM parts);", [serverId]);
       await db.runAsync("DELETE FROM pending_changes WHERE queue_id = ?;", [queueId]);
     });
   }
