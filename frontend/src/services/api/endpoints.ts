@@ -45,3 +45,52 @@ export async function apiPush(token: string, changes: PushChange[]): Promise<Pus
     body: { changes },
   });
 }
+
+
+interface BoatsResponse {
+  ok: boolean;
+  boats: import("@/src/types").Boat[];
+}
+
+interface BoatResponse {
+  ok: boolean;
+  boat: import("@/src/types").Boat;
+}
+
+export async function apiGetBoats(token: string): Promise<import("@/src/types").Boat[]> {
+  const r = await apiRequest<BoatsResponse>("/api/boats", { token });
+  return r.boats;
+}
+
+export async function apiCreateBoat(
+  token: string,
+  input: { name: string; registration: string; is_active: boolean },
+): Promise<import("@/src/types").Boat> {
+  const r = await apiRequest<BoatResponse>("/api/boats", {
+    method: "POST",
+    token,
+    body: { action: "create", ...input },
+  });
+  return r.boat;
+}
+
+export async function apiUpdateBoat(
+  token: string,
+  input: { id: number; name: string; registration: string; is_active: boolean },
+): Promise<import("@/src/types").Boat> {
+  const r = await apiRequest<BoatResponse>("/api/boats", {
+    method: "POST",
+    token,
+    body: { action: "update", ...input },
+  });
+  return r.boat;
+}
+
+export async function apiToggleBoat(token: string, id: number): Promise<import("@/src/types").Boat> {
+  const r = await apiRequest<BoatResponse>("/api/boats", {
+    method: "POST",
+    token,
+    body: { action: "toggle", id },
+  });
+  return r.boat;
+}
