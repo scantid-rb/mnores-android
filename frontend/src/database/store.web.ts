@@ -111,7 +111,6 @@ class WebStore implements LocalStore {
     const kept = local.filter(
       (p) => p.server_id == null || protectedSet.has(p.server_id),
     );
-    const keptServerIds = new Set(kept.filter((p) => p.server_id != null).map((p) => p.server_id));
 
     for (const p of data.parts) {
       if (protectedSet.has(p.id)) continue;
