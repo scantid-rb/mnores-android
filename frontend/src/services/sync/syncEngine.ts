@@ -37,6 +37,8 @@ export interface SyncSummary {
   receivedActiveParts: number;
   receivedDeletedParts: number;
   cachedParts: number;
+  protectedIds: number[];
+  missingActiveIds: number[];
 }
 
 function buildChange(entry: PendingChange): PushChange {
@@ -334,11 +336,16 @@ export async function pullAndReconcile(token: string): Promise<{ receivedParts: 
   await localStore.setLastSyncAt(sync.server_time);
   const counts = await localStore.getCounts();
   const receivedParts = sync.parts ?? [];
+  const cached = await localStore.searchParts({});
+  const activeIds = receivedParts.filter((p) => !p.deleted_at).map((p) => p.id);
+  const cachedIds = new Set(cached.filter((p) => p.server_id != null).map((p) => p.server_id as number));
   return {
     receivedParts: receivedParts.length,
-    receivedActiveParts: receivedParts.filter((p) => !p.deleted_at).length,
+    receivedActiveParts: activeIds.length,
     receivedDeletedParts: receivedParts.filter((p) => !!p.deleted_at).length,
     cachedParts: counts.parts,
+    protectedIds: protectedIds,
+    missingActiveIds: activeIds.filter((id) => !cachedIds.has(id)),
   };
 }
 
@@ -370,6 +377,8 @@ export async function runSync(token: string): Promise<SyncSummary> {
     summary.receivedActiveParts = syncStats.receivedActiveParts;
     summary.receivedDeletedParts = syncStats.receivedDeletedParts;
     summary.cachedParts = syncStats.cachedParts;
+    summary.protectedIds = syncStats.protectedIds;
+    summary.missingActiveIds = syncStats.missingActiveIds;
   } catch (e) {
     if (e instanceof ApiError && (e.kind === "network" || e.kind === "timeout")) {
       summary.networkError = true;
