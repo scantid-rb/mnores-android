@@ -22,6 +22,8 @@ export interface LocalStore {
   saveSession(user: SessionUser): Promise<void>;
   getSession(): Promise<SessionRow | null>;
   clearSession(): Promise<void>;
+  // Clear cached inventory and queued mutations when switching users.
+  clearUserData(): Promise<void>;
   setLastSyncAt(serverTime: string): Promise<void>;
 
   // Reconcile server data into the cache. Parts whose server id is in
