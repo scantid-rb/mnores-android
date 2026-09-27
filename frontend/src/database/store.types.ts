@@ -10,6 +10,7 @@ import {
   EditablePartFields,
   LocalPart,
   Part,
+  PendingPhoto,
   PendingChange,
   SessionRow,
   SessionUser,
@@ -43,6 +44,11 @@ export interface LocalStore {
   createPartLocal(input: CreatePartInput): Promise<LocalPart>;
   updatePartLocal(rowUid: string, fields: EditablePartFields): Promise<LocalPart | null>;
   deletePartLocal(rowUid: string): Promise<void>;
+  setLocalPhoto(rowUid: string, localPath: string): Promise<void>;
+  getPendingPhotos(): Promise<PendingPhoto[]>;
+  applyPhotoServerId(rowUid: string, serverId: number): Promise<void>;
+  applyPhotoOk(rowUid: string, serverUpdatedAt: string): Promise<void>;
+  markPhotoRetry(queueId: string, lastError: string): Promise<void>;
 
   // Sync queue.
   getPendingChanges(): Promise<PendingChange[]>;
