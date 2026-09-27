@@ -11,6 +11,7 @@ import {
   LocalPart,
   Part,
   PendingChange,
+  PendingPhoto,
   SessionRow,
   SessionUser,
 } from "@/src/types";
@@ -24,6 +25,7 @@ const K = {
   categories: "db.categories",
   parts: "db.parts",
   queue: "db.queue",
+  photos: "db.photo.queue",
 };
 
 async function readJson<T>(key: string, fallback: T): Promise<T> {
@@ -80,6 +82,7 @@ class WebStore implements LocalStore {
   async clearUserData(): Promise<void> {
     await storage.removeItem(K.parts);
     await storage.removeItem(K.queue);
+    await storage.removeItem(K.photos);
     await storage.removeItem(K.boats);
     await storage.removeItem(K.categories);
   }
@@ -140,6 +143,7 @@ class WebStore implements LocalStore {
           quantity: p.quantity ?? 0,
           notes: p.notes ?? null,
           photo_path: p.photo_path ?? null,
+          local_photo_path: canonical.local_photo_path ?? null,
           updated_at: p.updated_at ?? null,
           deleted_at: p.deleted_at ?? null,
           pending_delete: 0,
@@ -165,6 +169,7 @@ class WebStore implements LocalStore {
         quantity: p.quantity ?? 0,
         notes: p.notes ?? null,
         photo_path: p.photo_path ?? null,
+        local_photo_path: null,
         updated_at: p.updated_at ?? null,
         deleted_at: p.deleted_at ?? null,
         pending_delete: 0,
@@ -237,6 +242,7 @@ class WebStore implements LocalStore {
       quantity: input.quantity ?? 0,
       notes: input.notes ?? null,
       photo_path: null,
+      local_photo_path: null,
       updated_at: null,
       deleted_at: null,
       pending_delete: 0,
@@ -350,7 +356,9 @@ class WebStore implements LocalStore {
       .sort((a, b) => a.created_at.localeCompare(b.created_at));
   }
   async getPendingCount(): Promise<number> {
-    return (await this.queue()).filter((e) => e.status === "pending" || e.status === "syncing").length;
+    const queueCount = (await this.queue()).filter((e) => e.status === "pending" || e.status === "syncing").length;
+    const photoCount = (await readJson<PendingPhoto[]>(K.photos, [])).filter((p) => p.status === "pending" || p.status === "uploading").length;
+    return queueCount + photoCount;
   }
   async getProtectedServerIds(): Promise<number[]> {
     const ids = (await this.queue()).map((e) => e.entity_id).filter((v): v is number => v != null);
@@ -386,6 +394,38 @@ class WebStore implements LocalStore {
   async applyDeleteOk(queueId: string, serverId: number): Promise<void> {
     await writeJson(K.parts, (await this.parts()).filter((p) => p.server_id !== serverId));
     await writeJson(K.queue, (await this.queue()).filter((e) => e.queue_id !== queueId));
+  }
+  async setLocalPhoto(rowUid: string, localPath: string): Promise<void> {
+    const parts = await this.parts();
+    const idx = parts.findIndex((p) => p.row_uid === rowUid);
+    if (idx < 0) throw new Error("Pieza no encontrada");
+    parts[idx] = { ...parts[idx], local_photo_path: localPath };
+    const q = await readJson<PendingPhoto[]>(K.photos, []);
+    const filtered = q.filter((p) => p.row_uid !== rowUid);
+    filtered.push({ queue_id: newQueueId(), row_uid: rowUid, server_id: parts[idx].server_id, local_path: localPath, retry_count: 0, last_error: null, status: "pending", created_at: nowIso() });
+    await writeJson(K.parts, parts);
+    await writeJson(K.photos, filtered);
+  }
+  async getPendingPhotos(): Promise<PendingPhoto[]> {
+    return readJson<PendingPhoto[]>(K.photos, []);
+  }
+  async applyPhotoServerId(rowUid: string, serverId: number): Promise<void> {
+    const q = await readJson<PendingPhoto[]>(K.photos, []);
+    for (const p of q) if (p.row_uid === rowUid) p.server_id = serverId;
+    await writeJson(K.photos, q);
+  }
+  async applyPhotoOk(rowUid: string, serverUpdatedAt: string): Promise<void> {
+    const parts = await this.parts();
+    const idx = parts.findIndex((p) => p.row_uid === rowUid);
+    if (idx >= 0) parts[idx] = { ...parts[idx], photo_path: "remote", updated_at: serverUpdatedAt };
+    await writeJson(K.parts, parts);
+    await writeJson(K.photos, (await readJson<PendingPhoto[]>(K.photos, [])).filter((p) => p.row_uid !== rowUid));
+  }
+  async markPhotoRetry(queueId: string, lastError: string): Promise<void> {
+    const q = await readJson<PendingPhoto[]>(K.photos, []);
+    const p = q.find((x) => x.queue_id === queueId);
+    if (p) { p.retry_count += 1; p.last_error = lastError; p.status = p.retry_count >= MAX_RETRIES ? "failed" : "pending"; }
+    await writeJson(K.photos, q);
   }
   async markConflict(rowUid: string): Promise<void> {
     const parts = await this.parts();
