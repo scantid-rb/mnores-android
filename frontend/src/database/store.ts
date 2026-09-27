@@ -79,7 +79,7 @@ class SqliteStore implements LocalStore {
 
     // parts table: rebuilt at schema v2 to move the primary key to row_uid.
     const ver = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version;");
-    if ((ver?.user_version ?? 0) < SCHEMA_VERSION) {
+    if ((ver?.user_version ?? 0) < 2) {
       await db.execAsync(`
         DROP TABLE IF EXISTS parts;
         CREATE TABLE parts (
@@ -142,9 +142,12 @@ class SqliteStore implements LocalStore {
     }
 
     // Schema v4: admin/inspector sessions may have no assigned boat.
-    // Rebuild only the session table; parts/inventory schema remains untouched.
-    const verAfter = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version;");
-    if ((verAfter?.user_version ?? 0) < 4) {
+    // Only the session table is migrated. Parts schema/version is independent.
+    const sessionCols = await db.getAllAsync<{ name: string; notnull: number }>(
+      "PRAGMA table_info(session);",
+    );
+    const sessionBoat = sessionCols.find((col) => col.name === "boat_id");
+    if ((ver?.user_version ?? 0) < 4 || sessionBoat?.notnull === 1) {
       await db.execAsync(`
         CREATE TABLE IF NOT EXISTS session_v4 (
           id INTEGER PRIMARY KEY,
