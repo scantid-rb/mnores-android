@@ -458,7 +458,10 @@ class SqliteStore implements LocalStore {
     const r = await db.getFirstAsync<{ n: number }>(
       "SELECT COUNT(*) AS n FROM pending_changes WHERE status IN ('pending','syncing');",
     );
-    return r?.n ?? 0;
+    const p = await db.getFirstAsync<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM photo_queue WHERE status IN ('pending','uploading');",
+    );
+    return (r?.n ?? 0) + (p?.n ?? 0);
   }
 
   async getProtectedServerIds(): Promise<number[]> {
