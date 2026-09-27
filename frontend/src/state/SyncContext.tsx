@@ -51,7 +51,7 @@ function messageFor(s: SyncSummary): string | null {
 }
 
 export function SyncProvider({ children }: { children: React.ReactNode }) {
-  const { token, signOut } = useSession();
+  const { token, signOut, refreshSession } = useSession();
   const { online } = useConnectivity();
 
   const [status, setStatus] = useState<SyncStatus>("idle");
@@ -99,6 +99,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         await signOut();
         return;
       }
+      // runSync persists the server cursor in SQLite. Refresh the session
+      // context so the Sync screen immediately shows the new timestamp.
+      await refreshSession();
       if (summary.conflicts > 0) setConflictNotice(true);
       const msg = messageFor(summary);
       setLastError(msg);
@@ -111,7 +114,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       running.current = false;
       await refreshPending();
     }
-  }, [token, online, signOut, refreshPending]);
+  }, [token, online, signOut, refreshSession, refreshPending]);
 
   // Initial pass on mount (once we have a token and are online).
   useEffect(() => {
