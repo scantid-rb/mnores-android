@@ -48,6 +48,9 @@ export default function PartEditScreen() {
 
   useEffect(() => {
     if (isEdit && existing && !loaded) {
+      // Hydrate local form state from asynchronously loaded SQLite data.
+      // This is an intentional effect-side state update, not a render loop.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setName(existing.name ?? "");
       setReference(existing.reference ?? "");
       setCategoryId(existing.category_id ?? null);
