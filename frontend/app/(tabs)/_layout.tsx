@@ -16,6 +16,9 @@ function TabLabel({ label, focused }: { label: string; focused: boolean }) {
         fontWeight: focused ? "700" : "500",
         color: focused ? colors.brandPrimary : colors.muted,
       }}
+      numberOfLines={1}
+      adjustsFontSizeToFit
+      minimumFontScale={0.8}
     >
       {label}
     </Text>
