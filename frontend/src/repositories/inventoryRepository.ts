@@ -10,8 +10,8 @@ import {
 } from "@/src/types";
 
 export const inventoryRepository = {
-  searchParts(query: string, categoryId: number | null): Promise<LocalPart[]> {
-    return localStore.searchParts({ query, categoryId });
+  searchParts(query: string, categoryId: number | null, boatId: number | null = null): Promise<LocalPart[]> {
+    return localStore.searchParts({ query, categoryId, boatId });
   },
   getCategories(): Promise<Category[]> {
     return localStore.getCategories();
