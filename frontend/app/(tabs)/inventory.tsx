@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PartRow } from "@/src/components/PartRow";
 import { StatusBadge } from "@/src/components/StatusBadge";
-import { useCategories, useParts } from "@/src/hooks/useInventory";
+import { useBoats, useCategories, useParts } from "@/src/hooks/useInventory";
 import { useUpdatePart } from "@/src/hooks/usePartMutations";
 import { useConnectivity } from "@/src/services/sync/connectivity";
 import { useSession } from "@/src/state/SessionContext";
@@ -39,8 +39,12 @@ export default function InventoryScreen() {
 
   const [query, setQuery] = useState("");
   const [categoryId, setCategoryId] = useState<number | null>(null);
+  const [boatId, setBoatId] = useState<number | null>(null);
+  const isGlobalInventoryRole = user?.role === "admin" || user?.role === "inspector";
 
-  const { data: parts = [], isLoading } = useParts(query, categoryId);
+  const { data: boats = [] } = useBoats();
+  const effectiveBoatId = isGlobalInventoryRole ? boatId : user?.boat_id ?? null;
+  const { data: parts = [], isLoading } = useParts(query, categoryId, effectiveBoatId);
   const { data: categories = [] } = useCategories();
 
   const categoryName = useMemo(() => {
@@ -71,6 +75,24 @@ export default function InventoryScreen() {
           <Text style={styles.pending} testID="pending-banner">
             {pendingCount} cambio(s) pendiente(s) de sincronizar
           </Text>
+        )}
+
+        {isGlobalInventoryRole && (
+          <View style={styles.boatSelector}>
+            <Text style={styles.filterLabel}>Barco</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+              <Chip label="Todos los barcos" active={boatId === null} onPress={() => setBoatId(null)} testID="chip-boat-all" />
+              {boats.filter((b) => b.is_active).map((b) => (
+                <Chip
+                  key={b.id}
+                  label={b.name}
+                  active={boatId === b.id}
+                  onPress={() => setBoatId(b.id)}
+                  testID={`chip-boat-${b.id}`}
+                />
+              ))}
+            </ScrollView>
+          </View>
         )}
 
         <TextInput
@@ -114,7 +136,7 @@ export default function InventoryScreen() {
             <Text style={styles.emptyTitle}>{isLoading ? "Cargando…" : "Sin repuestos"}</Text>
             {!isLoading && (
               <Text style={styles.emptyText}>
-                {query || categoryId !== null
+                {query || categoryId !== null || boatId !== null
                   ? "No hay resultados para el filtro actual."
                   : online
                     ? "Desliza hacia abajo para sincronizar."
@@ -170,6 +192,8 @@ const useStyles = makeStyles((colors) => ({
     fontSize: 15,
     color: colors.onSurface,
   },
+  boatSelector: { gap: 6 },
+  filterLabel: { fontSize: 12, fontWeight: "700", color: colors.onSurfaceSecondary },
   chipsWrapper: { height: 44 },
   chipsRow: { gap: 8, paddingRight: 8, alignItems: "center" },
   chip: {
