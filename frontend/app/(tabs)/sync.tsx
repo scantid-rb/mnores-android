@@ -18,7 +18,7 @@ export default function SyncScreen() {
 
   const { online } = useConnectivity();
   const { session } = useSession();
-  const { status, pendingCount, lastError, conflictNotice, diagnostics, syncNow, clearConflictNotice } = useSync();
+  const { status, pendingCount, lastError, conflictNotice, diagnostics, receivedParts, cachedParts, syncNow, clearConflictNotice } = useSync();
   const { data: counts } = useCounts();
 
   const syncing = status === "syncing";
@@ -46,6 +46,8 @@ export default function SyncScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Cache local</Text>
           <Row label="Repuestos" value={String(counts?.parts ?? 0)} />
+          <Row label="Servidor (última sync)" value={String(receivedParts)} />
+          <Row label="Cache tras sync" value={String(cachedParts)} />
           <Row label="Categorías" value={String(counts?.categories ?? 0)} />
           <Row label="Barcos" value={String(counts?.boats ?? 0)} />
         </View>
