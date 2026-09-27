@@ -320,8 +320,7 @@ export async function pullAndReconcile(token: string): Promise<{ receivedParts: 
     // Incremental sync: /api/sync returns only changed rows. Merge those
     // changes with the local cache before calling the existing reconciliation
     // logic, otherwise unchanged local rows would be mistaken for deletions.
-    const [currentBoats, currentCategories, currentParts] = await Promise.all([
-      localStore.getBoats(),
+    const [currentCategories, currentParts] = await Promise.all([
       localStore.getCategories(),
       localStore.searchParts({}),
     ]);
