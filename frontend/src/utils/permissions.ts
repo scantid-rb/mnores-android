@@ -5,16 +5,16 @@
 import { Role } from "@/src/types";
 
 export function canCreatePart(role: Role | undefined): boolean {
-  return role === "chief_engineer";
+  return role === "chief_engineer" || role === "admin" || role === "inspector";
 }
 
 export function canDeletePart(role: Role | undefined): boolean {
-  return role === "chief_engineer";
+  return role === "chief_engineer" || role === "admin" || role === "inspector";
 }
 
 // Edit all descriptive fields (name, reference, category, location, notes).
 export function canEditFields(role: Role | undefined): boolean {
-  return role === "chief_engineer";
+  return role === "chief_engineer" || role === "admin" || role === "inspector";
 }
 
 // Change quantity (chief_engineer and mechanic).
