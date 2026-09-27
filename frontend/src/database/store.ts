@@ -184,25 +184,41 @@ class SqliteStore implements LocalStore {
       for (const p of data.parts) {
         if (protectedSet.has(p.id)) continue;
         if (p.deleted_at) {
+          // A tombstone removes every stale local duplicate for this server id.
           await db.runAsync("DELETE FROM parts WHERE server_id = ?;", [p.id]);
           continue;
         }
         // Match by server_id first. If an older/local row already owns the
         // canonical server row_uid (srv-<id>), reuse that row instead of
         // attempting a second INSERT and violating the row_uid PRIMARY KEY.
-        const existing = await db.getFirstAsync<{ row_uid: string }>(
-          "SELECT row_uid FROM parts WHERE server_id = ? OR row_uid = ? LIMIT 1;",
+        const existingRows = await db.getAllAsync<{ row_uid: string; sync_state: string }>(
+          "SELECT row_uid, sync_state FROM parts WHERE server_id = ? OR row_uid = ?;",
           [p.id, `srv-${p.id}`],
         );
-        if (existing) {
+        if (existingRows.length > 0) {
+          // There must be exactly one local row for each canonical server id.
+          // Prefer the canonical srv-<id> row; otherwise prefer a synced row.
+          const canonical =
+            existingRows.find((r) => r.row_uid === `srv-${p.id}`) ??
+            existingRows.find((r) => r.sync_state === "synced") ??
+            existingRows[0];
+
           await db.runAsync(
             `UPDATE parts SET server_id=?, local_id=NULL, boat_id=?, name=?, reference=?, category_id=?, location=?, quantity=?, notes=?, photo_path=?, updated_at=?, deleted_at=?, pending_delete=0, sync_state='synced' WHERE row_uid=?;`,
             [
               p.id, p.boat_id, p.name, p.reference ?? null, p.category_id ?? null,
               p.location ?? null, p.quantity ?? 0, p.notes ?? null, p.photo_path ?? null,
-              p.updated_at ?? null, p.deleted_at ?? null, existing.row_uid,
+              p.updated_at ?? null, p.deleted_at ?? null, canonical.row_uid,
             ],
           );
+
+          // Repair duplicates left by an older reconciliation.
+          const duplicateUids = existingRows
+            .map((r) => r.row_uid)
+            .filter((uid) => uid !== canonical.row_uid);
+          for (const uid of duplicateUids) {
+            await db.runAsync("DELETE FROM parts WHERE row_uid = ?;", [uid]);
+          }
         } else {
           await db.runAsync(
             `INSERT INTO parts (row_uid, server_id, local_id, boat_id, name, reference, category_id, location, quantity, notes, photo_path, updated_at, deleted_at, pending_delete, sync_state)
