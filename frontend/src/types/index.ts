@@ -6,7 +6,7 @@ export interface SessionUser {
   id: number;
   username: string;
   role: Role;
-  boat_id: number;
+  boat_id: number | null;
 }
 
 export interface Boat {
@@ -55,7 +55,7 @@ export interface SessionRow {
   id: number;
   username: string;
   role: Role;
-  boat_id: number;
+  boat_id: number | null;
   last_sync_at: string | null;
 }
 
