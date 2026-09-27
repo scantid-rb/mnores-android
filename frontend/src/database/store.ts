@@ -137,6 +137,16 @@ class SqliteStore implements LocalStore {
     await db.runAsync("DELETE FROM session;");
   }
 
+  async clearUserData(): Promise<void> {
+    const db = await getDb();
+    await db.withTransactionAsync(async () => {
+      await db.runAsync("DELETE FROM pending_changes;");
+      await db.runAsync("DELETE FROM parts;");
+      await db.runAsync("DELETE FROM boats;");
+      await db.runAsync("DELETE FROM categories;");
+    });
+  }
+
   async setLastSyncAt(serverTime: string): Promise<void> {
     const db = await getDb();
     await db.runAsync("UPDATE session SET last_sync_at = ?;", [serverTime]);
