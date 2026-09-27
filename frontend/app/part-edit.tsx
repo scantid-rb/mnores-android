@@ -40,6 +40,7 @@ export default function PartEditScreen() {
   const [name, setName] = useState("");
   const [reference, setReference] = useState("");
   const [categoryId, setCategoryId] = useState<number | null>(null);
+  const [boatId, setBoatId] = useState<number | null>(null);
   const [location, setLocation] = useState("");
   const [quantity, setQuantity] = useState("0");
   const [notes, setNotes] = useState("");
@@ -54,6 +55,7 @@ export default function PartEditScreen() {
       setName(existing.name ?? "");
       setReference(existing.reference ?? "");
       setCategoryId(existing.category_id ?? null);
+      setBoatId(existing.boat_id ?? null);
       setLocation(existing.location ?? "");
       setQuantity(String(existing.quantity ?? 0));
       setNotes(existing.notes ?? "");
@@ -62,7 +64,7 @@ export default function PartEditScreen() {
   }, [isEdit, existing, loaded]);
 
   const boatName = useMemo(() => {
-    const bId = isEdit ? existing?.boat_id : user?.boat_id;
+    const bId = isEdit ? existing?.boat_id : (boatId ?? user?.boat_id);
     return boats.find((b) => b.id === bId)?.name ?? (bId != null ? `ID ${bId}` : "—");
   }, [boats, existing, user, isEdit]);
 
@@ -96,13 +98,13 @@ export default function PartEditScreen() {
         : { quantity: parsedQty };
       updatePart.mutate({ rowUid: String(rowUid), fields }, { onSuccess: () => router.back() });
     } else {
-      if (user?.boat_id == null) {
-        setError("No hay barco asignado a la sesión.");
+      if (boatId == null && user?.boat_id == null) {
+        setError("Selecciona un barco.");
         return;
       }
       createPart.mutate(
         {
-          boat_id: user.boat_id,
+          boat_id: boatId ?? user.boat_id,
           name: name.trim(),
           reference: reference.trim() || null,
           category_id: categoryId,
@@ -129,7 +131,24 @@ export default function PartEditScreen() {
 
       <KeyboardAwareScrollView bottomOffset={24} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Field label="Barco">
-          <Text style={styles.readonly}>{boatName}</Text>
+          {fullEdit && !isEdit ? (
+            <View style={styles.chipsRow}>
+              {boats.filter((b) => b.is_active).map((b) => {
+                const active = (boatId ?? user?.boat_id) === b.id;
+                return (
+                  <Text
+                    key={b.id}
+                    onPress={() => setBoatId(active ? null : b.id)}
+                    style={[styles.chip, active ? styles.chipActive : styles.chipInactive]}
+                  >
+                    {b.name}
+                  </Text>
+                );
+              })}
+            </View>
+          ) : (
+            <Text style={styles.readonly}>{boatName}</Text>
+          )}
         </Field>
 
         {fullEdit && (
