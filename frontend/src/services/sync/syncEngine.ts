@@ -6,7 +6,7 @@
 import { ApiError } from "@/src/services/api/client";
 import { uploadPartPhoto } from "@/src/services/photos/photoService";
 import * as FileSystem from "expo-file-system/legacy";
-import { apiGetSync, apiPush } from "@/src/services/api/endpoints";
+import { apiGetBoats, apiGetSync, apiPush } from "@/src/services/api/endpoints";
 import { localStore } from "@/src/database/store";
 import { LocalPart, Part, PendingChange, PushChange, PushResult } from "@/src/types";
 
@@ -305,10 +305,15 @@ export async function pullAndReconcile(token: string): Promise<{ receivedParts: 
   const protectedIds = await localStore.getProtectedServerIds();
   const sync = await apiGetSync(token, lastSyncAt);
 
+  // Boats are a small administrative catalog and physical boat deletion does
+  // not leave a tombstone. Fetch the authoritative boat snapshot directly
+  // after every sync so a deleted boat can never remain in the local cache.
+  const authoritativeBoats = await apiGetBoats(token);
+
   if (!lastSyncAt) {
     // First sync: the API returns the complete visible dataset.
     await localStore.reconcileInventory(
-      { boats: sync.boats ?? [], categories: sync.categories ?? [], parts: sync.parts ?? [] },
+      { boats: authoritativeBoats, categories: sync.categories ?? [], parts: sync.parts ?? [] },
       protectedIds,
     );
   } else {
@@ -321,7 +326,7 @@ export async function pullAndReconcile(token: string): Promise<{ receivedParts: 
       localStore.searchParts({}),
     ]);
 
-    const boats = mergeById(currentBoats, sync.boats ?? []);
+    const boats = authoritativeBoats;
     const categories = mergeById(currentCategories, sync.categories ?? []);
     const parts = mergeParts(currentParts, sync.parts ?? []);
 
