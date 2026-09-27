@@ -1,9 +1,10 @@
-// Central configuration. The API base URL is read ONLY from the environment
-// (EXPO_PUBLIC_API_BASE_URL). Never hard-code the URL elsewhere in the app.
-// Development value lives in frontend/.env; production will switch to HTTPS
-// without changing any source code.
+// Central configuration. EXPO_PUBLIC_API_BASE_URL can override the default.
+// The development/production API is served over HTTPS.
+// This fallback ensures a fresh Codespace works even when frontend/.env
+// has not been created yet. Local .env values still take precedence.
 
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL as string;
+export const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_BASE_URL || "https://devmn.atwebpages.com";
 
 // The mobile app version is independent from the backend API version.
 export const APP_VERSION = "0.1.2";
