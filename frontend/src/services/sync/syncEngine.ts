@@ -1,23 +1,18 @@
-// First functional Sync Engine.
-//   processQueue: push each pending_change to POST /api/parts/push (one item
-//                 per request so a poison item cannot block the others), then
-//                 apply the per-item result exactly as the server reports it.
-//   pullAndReconcile: GET /api/sync and merge, protecting rows that still have
-//                 pending changes.
-// It only runs on triggers (app start, reconnect, manual). It never loops
-// aggressively and never loses or duplicates operations. Errors are classified
-// precisely (connectivity vs HTTP/parse/API) and captured for diagnostics.
+// Sync Engine.
+// Pushes pending changes, then pulls either the initial full snapshot or an
+// incremental /api/sync?since=<last_server_time> delta and reconciles it with
+// the existing local cache.
 
 import { ApiError } from "@/src/services/api/client";
 import { apiGetSync, apiPush } from "@/src/services/api/endpoints";
 import { localStore } from "@/src/database/store";
-import { PendingChange, PushChange, PushResult } from "@/src/types";
+import { Boat, Category, Part, PendingChange, PushChange, PushResult } from "@/src/types";
 
 export interface SyncDiagnostics {
   path: string;
   method: string;
   httpStatus: number | null;
-  kind: string; // ok | network | timeout | http | parse | api | auth
+  kind: string;
   timeout: boolean;
   fetchError: boolean;
   parseOk: boolean;
@@ -54,9 +49,18 @@ function buildChange(entry: PendingChange): PushChange {
     };
   }
   if (entry.action === "update") {
-    return { action: "update", id: entry.entity_id ?? undefined, base_updated_at: entry.base_updated_at, ...payload };
+    return {
+      action: "update",
+      id: entry.entity_id ?? undefined,
+      base_updated_at: entry.base_updated_at,
+      ...payload,
+    };
   }
-  return { action: "delete", id: entry.entity_id ?? undefined, base_updated_at: entry.base_updated_at };
+  return {
+    action: "delete",
+    id: entry.entity_id ?? undefined,
+    base_updated_at: entry.base_updated_at,
+  };
 }
 
 function matchResult(entry: PendingChange, results: PushResult[]): PushResult | undefined {
@@ -137,20 +141,17 @@ async function processQueue(token: string): Promise<SyncSummary> {
         if (e.status === 401 || e.status === 403) {
           summary.authError = true;
           await localStore.revertSyncing([entry.queue_id]);
-          break; // needs re-login
+          break;
         }
         if (e.kind === "network" || e.kind === "timeout") {
-          // Genuine connectivity problem: keep everything, stop early.
           summary.networkError = true;
           await localStore.revertSyncing([entry.queue_id]);
           break;
         }
-        // HTTP / parse / API rejection of THIS operation. Do not block others.
         summary.serverError = true;
         await localStore.markRetry(entry.queue_id, `HTTP ${e.status} (${e.kind})`);
         continue;
       }
-      // Unexpected client error: keep the op, stop.
       summary.serverError = true;
       await localStore.revertSyncing([entry.queue_id]);
       break;
@@ -170,7 +171,6 @@ async function processQueue(token: string): Promise<SyncSummary> {
         await applyOk(entry, res);
         break;
       case "conflict_overwritten":
-        // Server applied its decision; complete and reconcile via /api/sync.
         summary.conflicts++;
         await applyOk(entry, res);
         break;
@@ -192,20 +192,55 @@ async function processQueue(token: string): Promise<SyncSummary> {
   return summary;
 }
 
+function mergeById<T extends { id: number }>(current: T[], delta: T[]): T[] {
+  const merged = new Map<number, T>();
+  for (const row of current) merged.set(row.id, row);
+  for (const row of delta) merged.set(row.id, row);
+  return Array.from(merged.values());
+}
+
 export async function pullAndReconcile(token: string): Promise<void> {
+  const session = await localStore.getSession();
+  const lastSyncAt = session?.last_sync_at ?? null;
+
   const protectedIds = await localStore.getProtectedServerIds();
-  const sync = await apiGetSync(token);
-  await localStore.reconcileInventory(
-    { boats: sync.boats ?? [], categories: sync.categories ?? [], parts: sync.parts ?? [] },
-    protectedIds,
-  );
+  const sync = await apiGetSync(token, lastSyncAt);
+
+  if (!lastSyncAt) {
+    // First sync: the API returns the complete visible dataset.
+    await localStore.reconcileInventory(
+      { boats: sync.boats ?? [], categories: sync.categories ?? [], parts: sync.parts ?? [] },
+      protectedIds,
+    );
+  } else {
+    // Incremental sync: /api/sync returns only changed rows. Merge those
+    // changes with the local cache before calling the existing reconciliation
+    // logic, otherwise unchanged local rows would be mistaken for deletions.
+    const [currentBoats, currentCategories, currentParts] = await Promise.all([
+      localStore.getBoats(),
+      localStore.getCategories(),
+      localStore.searchParts({}),
+    ]);
+
+    const boats = mergeById(currentBoats, sync.boats ?? []);
+    const categories = mergeById(currentCategories, sync.categories ?? []);
+    const parts = mergeById(currentParts, sync.parts ?? []);
+
+    await localStore.reconcileInventory(
+      { boats, categories, parts },
+      protectedIds,
+    );
+  }
+
+  // Advance the cursor only after the complete reconciliation transaction
+  // succeeds. The cursor is the server-provided time, never the device clock.
   await localStore.setLastSyncAt(sync.server_time);
 }
 
-// Full sync pass: push the queue, then pull & reconcile.
 export async function runSync(token: string): Promise<SyncSummary> {
   const summary = await processQueue(token);
-  if (summary.authError || summary.networkError) return summary; // skip pull
+  if (summary.authError || summary.networkError) return summary;
+
   try {
     await pullAndReconcile(token);
   } catch (e) {
@@ -215,7 +250,9 @@ export async function runSync(token: string): Promise<SyncSummary> {
       summary.authError = true;
     } else {
       summary.serverError = true;
-      if (e instanceof ApiError) summary.diagnostics = { ...errorDiag(e), path: "/api/sync", method: "GET" };
+      if (e instanceof ApiError) {
+        summary.diagnostics = { ...errorDiag(e), path: "/api/sync", method: "GET" };
+      }
     }
   }
   return summary;
