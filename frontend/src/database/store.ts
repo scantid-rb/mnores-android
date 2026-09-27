@@ -21,7 +21,7 @@ import { LocalStore } from "@/src/database/store.types";
 import { newQueueId } from "@/src/utils/id";
 
 const MAX_RETRIES = 5;
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -45,7 +45,7 @@ class SqliteStore implements LocalStore {
         id INTEGER PRIMARY KEY,
         username TEXT NOT NULL,
         role TEXT NOT NULL,
-        boat_id INTEGER NOT NULL,
+        boat_id INTEGER,
         last_sync_at TEXT
       );
 
@@ -141,6 +141,25 @@ class SqliteStore implements LocalStore {
       `);
     }
 
+    // Schema v4: admin/inspector sessions may have no assigned boat.
+    // Rebuild only the session table; parts/inventory schema remains untouched.
+    const verAfter = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version;");
+    if ((verAfter?.user_version ?? 0) < 4) {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS session_v4 (
+          id INTEGER PRIMARY KEY,
+          username TEXT NOT NULL,
+          role TEXT NOT NULL,
+          boat_id INTEGER,
+          last_sync_at TEXT
+        );
+        INSERT OR REPLACE INTO session_v4 (id, username, role, boat_id, last_sync_at)
+          SELECT id, username, role, boat_id, last_sync_at FROM session;
+        DROP TABLE session;
+        ALTER TABLE session_v4 RENAME TO session;
+        PRAGMA user_version = 4;
+      `);
+    }
     // Recover any operation left mid-flight by a previous crash/close.
     await db.runAsync("UPDATE pending_changes SET status = 'pending' WHERE status = 'syncing';");
   }
