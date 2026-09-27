@@ -137,13 +137,16 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     } finally {
       running.current = false;
       await refreshPending();
-
-      if (rerunRequested.current && token && online) {
-        rerunRequested.current = false;
-        void syncNow();
-      }
     }
   }, [token, online, signOut, refreshSession, refreshPending]);
+
+  // If a sync request arrived while another pass was running, execute one
+  // additional pass after the current pass has returned to idle.
+  useEffect(() => {
+    if (status !== "idle" || !rerunRequested.current || !token || !online) return;
+    rerunRequested.current = false;
+    void syncNow();
+  }, [status, token, online, syncNow]);
 
   // Initial pass on mount (once we have a token and are online).
   useEffect(() => {
