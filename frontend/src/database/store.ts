@@ -468,7 +468,7 @@ class SqliteStore implements LocalStore {
   async getProtectedServerIds(): Promise<number[]> {
     const db = await getDb();
     const rows = await db.getAllAsync<{ entity_id: number }>(
-      "SELECT DISTINCT entity_id FROM pending_changes WHERE entity_id IS NOT NULL;",
+      "SELECT DISTINCT entity_id FROM pending_changes WHERE entity_id IS NOT NULL AND status IN ('pending','syncing');",
     );
     return rows.map((r) => r.entity_id);
   }
