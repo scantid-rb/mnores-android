@@ -217,6 +217,19 @@ async function processPhotoQueue(token: string, summary: SyncSummary): Promise<v
     const info = await FileSystem.getInfoAsync(photo.local_path);
     if (!info.exists) {
       await localStore.markPhotoRetry(photo.queue_id, "archivo local de foto no encontrado");
+      summary.serverError = true;
+      summary.diagnostics = {
+        path: `/api/photos/${photo.server_id}`,
+        method: "POST",
+        httpStatus: null,
+        kind: "local_file",
+        timeout: false,
+        fetchError: false,
+        parseOk: true,
+        bodySnippet: "Archivo local de foto no encontrado.",
+        classification: "local_file",
+        at: new Date().toISOString(),
+      };
       continue;
     }
     try {
@@ -224,6 +237,8 @@ async function processPhotoQueue(token: string, summary: SyncSummary): Promise<v
       await localStore.applyPhotoOk(photo.row_uid, result.updated_at);
     } catch (e) {
       if (e instanceof ApiError) {
+        const d = errorDiag(e, `/api/photos/${photo.server_id}`, "POST");
+        summary.diagnostics = summary.diagnostics ?? d;
         if (e.status === 401 || e.status === 403) {
           summary.authError = true;
           return;
@@ -232,8 +247,11 @@ async function processPhotoQueue(token: string, summary: SyncSummary): Promise<v
           summary.networkError = true;
           return;
         }
+        summary.serverError = true;
         await localStore.markPhotoRetry(photo.queue_id, `HTTP ${e.status} (${e.kind})`);
       } else {
+        summary.serverError = true;
+        summary.diagnostics = summary.diagnostics ?? unknownDiag(e, `/api/photos/${photo.server_id}`, "POST");
         await localStore.markPhotoRetry(photo.queue_id, "error inesperado al subir foto");
       }
     }
@@ -315,10 +333,8 @@ export async function runSync(token: string): Promise<SyncSummary> {
   const summary = await processQueue(token);
   if (summary.authError || summary.networkError) return summary;
 
-  await processPhotoQueue(token, summary);
-  if (summary.authError || summary.networkError) return summary;
-
-  // A logical rejection is an API-level result inside HTTP 200. Keep a
+  // Inventory reconciliation must not be blocked by an independent photo
+  // upload failure. A photo is retried from photo_queue on the next pass.
   // diagnostic even if a future queue-path change fails to attach one.
   if (summary.failed > 0 && !summary.diagnostics) {
     summary.diagnostics = {
@@ -351,5 +367,9 @@ export async function runSync(token: string): Promise<SyncSummary> {
       }
     }
   }
+  if (!summary.authError && !summary.networkError) {
+    await processPhotoQueue(token, summary);
+  }
+
   return summary;
 }
