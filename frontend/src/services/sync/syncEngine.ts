@@ -85,11 +85,11 @@ function successDiag(): SyncDiagnostics {
   };
 }
 
-function errorDiag(e: ApiError): SyncDiagnostics {
+function errorDiag(e: ApiError, path = "/api/parts/push", method = "POST"): SyncDiagnostics {
   const isAuth = e.status === 401 || e.status === 403;
   return {
-    path: "/api/parts/push",
-    method: "POST",
+    path,
+    method,
     httpStatus: e.status || null,
     kind: e.kind,
     timeout: e.kind === "timeout",
@@ -97,6 +97,22 @@ function errorDiag(e: ApiError): SyncDiagnostics {
     parseOk: e.kind !== "parse",
     bodySnippet: e.bodySnippet,
     classification: isAuth ? "auth" : e.kind,
+    at: new Date().toISOString(),
+  };
+}
+
+function unknownDiag(e: unknown, path = "/api/parts/push", method = "POST"): SyncDiagnostics {
+  const message = e instanceof Error ? e.message : String(e);
+  return {
+    path,
+    method,
+    httpStatus: null,
+    kind: "unexpected",
+    timeout: false,
+    fetchError: false,
+    parseOk: true,
+    bodySnippet: message ? message.slice(0, 300) : "Error desconocido sin mensaje.",
+    classification: "unexpected",
     at: new Date().toISOString(),
   };
 }
@@ -153,6 +169,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
         continue;
       }
       summary.serverError = true;
+      summary.diagnostics = unknownDiag(e);
       await localStore.revertSyncing([entry.queue_id]);
       break;
     }
@@ -285,7 +302,9 @@ export async function runSync(token: string): Promise<SyncSummary> {
     } else {
       summary.serverError = true;
       if (e instanceof ApiError) {
-        summary.diagnostics = { ...errorDiag(e), path: "/api/sync", method: "GET" };
+        summary.diagnostics = errorDiag(e, "/api/sync", "GET");
+      } else {
+        summary.diagnostics = unknownDiag(e, "/api/sync", "GET");
       }
     }
   }
