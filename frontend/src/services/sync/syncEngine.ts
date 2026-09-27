@@ -140,7 +140,6 @@ async function processQueue(token: string): Promise<SyncSummary> {
   if (pending.length === 0) return summary;
 
   let errDiag: SyncDiagnostics | null = null;
-  let lastDiag: SyncDiagnostics | null = null;
 
   for (const entry of pending) {
     summary.pushed++;
@@ -149,11 +148,9 @@ async function processQueue(token: string): Promise<SyncSummary> {
     let response;
     try {
       response = await apiPush(token, [buildChange(entry)]);
-      lastDiag = successDiag();
     } catch (e) {
       if (e instanceof ApiError) {
         const d = errorDiag(e);
-        lastDiag = d;
         if (!errDiag) errDiag = d;
 
         if (e.status === 401 || e.status === 403) {
