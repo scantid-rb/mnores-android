@@ -312,13 +312,17 @@ class SqliteStore implements LocalStore {
     return db.getAllAsync<Category>("SELECT * FROM categories WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE;");
   }
 
-  async searchParts(opts: { query?: string; categoryId?: number | null }): Promise<LocalPart[]> {
+  async searchParts(opts: { query?: string; categoryId?: number | null; boatId?: number | null }): Promise<LocalPart[]> {
     const db = await getDb();
     const clauses: string[] = ["pending_delete = 0", "deleted_at IS NULL"];
     const params: (string | number)[] = [];
     if (opts.categoryId != null) {
       clauses.push("category_id = ?");
       params.push(opts.categoryId);
+    }
+    if (opts.boatId != null) {
+      clauses.push("boat_id = ?");
+      params.push(opts.boatId);
     }
     const q = opts.query?.trim();
     if (q) {
