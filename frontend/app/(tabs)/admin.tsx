@@ -1,4 +1,5 @@
-import { Text, View, ScrollView } from "react-native";
+import { Text, View, ScrollView, Pressable } from "react-native";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { StatusBadge } from "@/src/components/StatusBadge";
@@ -23,6 +24,7 @@ const MODULES = [
 
 export default function AdministrationScreen() {
   const styles = useStyles();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useSession();
   const { online } = useConnectivity();
@@ -48,13 +50,25 @@ export default function AdministrationScreen() {
           </Text>
         </View>
 
-        {MODULES.map((module) => (
-          <View key={module.title} style={styles.card}>
-            <Text style={styles.cardTitle}>{module.title}</Text>
-            <Text style={styles.cardText}>{module.description}</Text>
-            <Text style={styles.status}>Gestión en la siguiente fase</Text>
-          </View>
-        ))}
+        {MODULES.map((module) => {
+          const enabled = module.title === "Barcos";
+          return (
+            <Pressable
+              key={module.title}
+              style={[styles.card, !enabled && styles.cardDisabled]}
+              disabled={!enabled}
+              onPress={() => {
+                if (enabled) router.push("/admin/boats");
+              }}
+            >
+              <Text style={styles.cardTitle}>{module.title}</Text>
+              <Text style={styles.cardText}>{module.description}</Text>
+              <Text style={styles.status}>
+                {enabled ? "Abrir gestión →" : "Gestión en la siguiente fase"}
+              </Text>
+            </Pressable>
+          );
+        })}
       </ScrollView>
     </View>
   );
@@ -91,6 +105,7 @@ const useStyles = makeStyles((colors) => ({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  cardDisabled: { opacity: 0.65 },
   cardTitle: { fontSize: 16, fontWeight: "800", color: colors.onSurface },
   cardText: { fontSize: 14, lineHeight: 19, color: colors.onSurfaceSecondary },
   status: { fontSize: 12, fontWeight: "700", color: colors.muted },
