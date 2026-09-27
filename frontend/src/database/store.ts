@@ -149,7 +149,9 @@ class SqliteStore implements LocalStore {
   ): Promise<void> {
     const db = await getDb();
     const protectedSet = new Set(protectedServerIds);
-    const serverIds = new Set(data.parts.map((p) => p.id));
+    // Tombstones are authoritative deletions. Protected rows remain untouched
+    // until their pending operation is resolved.
+    const serverIds = new Set(data.parts.filter((p) => !p.deleted_at).map((p) => p.id));
 
     await db.withTransactionAsync(async () => {
       // Boats & categories are server-authoritative; replace wholesale.
@@ -168,8 +170,13 @@ class SqliteStore implements LocalStore {
       }
 
       // Parts: merge, protecting rows that still have pending changes.
+      // A server tombstone is a deletion signal, not a normal part row.
       for (const p of data.parts) {
         if (protectedSet.has(p.id)) continue;
+        if (p.deleted_at) {
+          await db.runAsync("DELETE FROM parts WHERE server_id = ?;", [p.id]);
+          continue;
+        }
         const existing = await db.getFirstAsync<{ row_uid: string }>(
           "SELECT row_uid FROM parts WHERE server_id = ?;",
           [p.id],
