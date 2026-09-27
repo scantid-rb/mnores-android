@@ -40,7 +40,15 @@
       "expo-secure-store",
       "expo-web-browser",
       "expo-status-bar",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "MNores necesita la cámara para fotografiar repuestos.",
+          "photosPermission": "MNores necesita acceso a tus fotos para adjuntar imágenes a los repuestos.",
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
