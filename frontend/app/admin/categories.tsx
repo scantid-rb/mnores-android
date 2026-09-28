@@ -53,7 +53,7 @@ export default function CategoriesAdminScreen() {
     if (!token || !online || saving || category.is_system === 1) return;
     Alert.alert(
       "Eliminar categoría",
-      \`¿Quieres eliminar «\${category.name}»? Los repuestos que la utilicen pasarán a «Sin categoría».\`,
+      `¿Quieres eliminar «${category.name}»? Los repuestos que la utilicen pasarán a «Sin categoría».`,
       [
         { text: "Cancelar", style: "cancel" },
         { text: "Eliminar", style: "destructive", onPress: async () => {
