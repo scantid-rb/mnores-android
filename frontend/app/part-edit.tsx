@@ -25,8 +25,8 @@ export default function PartEditScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const { mode, rowUid } = useLocalSearchParams<{ mode: string; rowUid?: string }>();
-  const isEdit = mode === "edit" && !!rowUid;
+  const { mode: routeMode, rowUid } = useLocalSearchParams<{ mode: string; rowUid?: string }>();
+  const isEdit = routeMode === "edit" && !!rowUid;
 
   const { user, token, session, mode } = useSession();
   if (mode === "readonly") return <Redirect href="/inventory" />;
