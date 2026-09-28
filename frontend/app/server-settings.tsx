@@ -91,7 +91,7 @@ export default function ServerSettingsScreen() {
     );
   };
 
-  const compatible = handshake?.api_version === API_VERSION;
+  const compatible = handshake?.installed === true && handshake.api_version === API_VERSION;
   const busy = checking || saving;
 
   return (
@@ -137,12 +137,12 @@ export default function ServerSettingsScreen() {
 
         {handshake && (
           <View style={[styles.resultCard, compatible ? styles.resultOk : styles.resultError]}>
-            <Text style={styles.resultTitle}>{compatible ? "Servidor compatible" : "Servidor no compatible"}</Text>
+            <Text style={styles.resultTitle}>{compatible ? "Servidor compatible" : handshake.installed ? "Servidor no compatible" : "Servidor no inicializado"}</Text>
             <Text style={styles.resultLine}>Nombre: {handshake.app_name}</Text>
             <Text style={styles.resultLine}>Título: {handshake.app_title}</Text>
             <Text style={styles.resultLine}>Versión del servidor: {handshake.app_version}</Text>
             <Text style={styles.resultLine}>API del servidor: {handshake.api_version}</Text>
-            <Text style={styles.resultLine}>API requerida por la app: {API_VERSION}</Text>
+            <Text style={styles.resultLine}>API requerida por la app: {API_VERSION}</Text>\n            {!handshake.installed && <Text style={styles.resultLine}>El servidor debe completarse mediante su asistente de instalación antes de utilizarlo.</Text>}
           </View>
         )}
 
