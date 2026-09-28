@@ -213,7 +213,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
     }
   }
 
-  // Preserve a logical API rejection diagnostic; a later HTTP-200 success must not overwrite it.\n  summary.diagnostics = errDiag ?? summary.diagnostics ?? lastDiag;
+  // Preserve a logical API rejection diagnostic; a later HTTP-200 success must not overwrite it.\n  summary.diagnostics = errDiag ?? summary.diagnostics;
   return summary;
 }
 
