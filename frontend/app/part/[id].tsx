@@ -220,17 +220,21 @@ export default function PartDetailScreen() {
                   >
                     <Text style={styles.photoViewerCloseText}>×</Text>
                   </Pressable>
-                  <Image
-                    source={
-                      part.local_photo_path
-                        ? { uri: part.local_photo_path }
-                        : token && part.server_id
-                          ? { uri: remotePartPhotoUrl(part.server_id), headers: { Authorization: `Bearer ${token}` } }
-                          : undefined
-                    }
-                    style={[styles.photoViewerImage, photoZoomStyle]}
-                    contentFit="contain"
-                  />
+                  <GestureDetector gesture={pinchGesture}>
+                    <Animated.View style={styles.photoViewerGestureArea}>
+                      <Animated.Image
+                        source={
+                          part.local_photo_path
+                            ? { uri: part.local_photo_path }
+                            : token && part.server_id
+                              ? { uri: remotePartPhotoUrl(part.server_id), headers: { Authorization: `Bearer ${token}` } }
+                              : undefined
+                        }
+                        style={[styles.photoViewerImage, photoZoomStyle]}
+                        contentFit="contain"
+                      />
+                    </Animated.View>
+                  </GestureDetector>
                 </View>
               </Modal>
               <Field
@@ -318,6 +322,7 @@ const useStyles = makeStyles((colors) => ({
     justifyContent: "center",
     padding: 16,
   },
+  photoViewerGestureArea: { width: "100%", height: "100%" },
   photoViewerImage: { width: "100%", height: "100%" },
   photoViewerClose: {
     position: "absolute",
