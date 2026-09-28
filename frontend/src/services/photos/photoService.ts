@@ -2,7 +2,8 @@ import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system/legacy";
 import { Image } from "react-native";
-import { API_BASE_URL, REQUEST_TIMEOUT_MS } from "@/src/config";
+import { REQUEST_TIMEOUT_MS } from "@/src/config";
+import { getServerUrl, getServerUrlSync } from "@/src/services/serverConfig";
 import { ApiError } from "@/src/services/api/client";
 
 const MAX_WIDTH = 1600;
@@ -130,7 +131,7 @@ export async function uploadPartPhoto(token: string, partId: number, localPath: 
   let result: FileSystem.FileSystemUploadResult;
   try {
     result = await FileSystem.uploadAsync(
-      `${API_BASE_URL}/api/photos/${partId}`,
+      `${await getServerUrl()}/api/photos/${partId}`,
       localPath,
       {
         httpMethod: "POST",
@@ -188,5 +189,5 @@ export async function uploadPartPhoto(token: string, partId: number, localPath: 
 }
 
 export function remotePartPhotoUrl(partId: number): string {
-  return `${API_BASE_URL}/api/photos/${partId}`;
+  return `${getServerUrlSync()}/api/photos/${partId}`;
 }
