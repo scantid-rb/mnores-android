@@ -4,7 +4,7 @@
 import { apiRequest, apiRequestAtBaseUrl } from "@/src/services/api/client";
 import * as FileSystem from "expo-file-system/legacy";
 import { APP_VERSION, API_VERSION } from "@/src/config";
-import { normalizeServerUrl } from "@/src/services/serverConfig";
+import { getServerUrl, normalizeServerUrl } from "@/src/services/serverConfig";
 import { PushChange, PushResponse, SessionUser, SyncResponse } from "@/src/types";
 
 
