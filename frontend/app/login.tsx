@@ -4,6 +4,7 @@
 import { Redirect, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
+import { SymbolView } from "expo-symbols";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -67,6 +68,17 @@ export default function LoginScreen() {
           <View style={styles.badgeRow}><StatusBadge online={online} /></View>
         </View>
 
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Configuración del servidor"
+          style={styles.serverSettingsButton}
+          onPress={() => router.push("/server-settings")}
+          testID="server-settings-button"
+        >
+          <SymbolView name={{ ios: "gearshape.fill", android: "settings", web: "settings" }} size={22} tintColor={colors.brandPrimary} />
+          <Text style={styles.serverSettingsText}>Configuración del servidor</Text>
+        </Pressable>
+
         <View style={styles.card}>
           <Text style={styles.label}>Usuario</Text>
           <TextInput style={styles.input} value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} placeholder="Usuario" placeholderTextColor={colors.muted} testID="login-username-input" />
@@ -101,6 +113,8 @@ const useStyles = makeStyles((colors) => ({
   brand: { fontSize: 28, fontWeight: "800", color: colors.brandPrimary },
   subtitle: { fontSize: 14, color: colors.muted },
   badgeRow: { marginTop: 8 },
+  serverSettingsButton: { alignSelf: "center", minHeight: 44, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  serverSettingsText: { fontSize: 14, fontWeight: "700", color: colors.brandPrimary },
   card: { backgroundColor: colors.surfaceSecondary, borderRadius: 16, padding: 20, gap: 8, borderWidth: 1, borderColor: colors.border },
   readonlyCard: { backgroundColor: colors.surfaceSecondary, borderRadius: 16, padding: 20, gap: 10, borderWidth: 1, borderColor: colors.border },
   readonlyTitle: { fontSize: 16, fontWeight: "800", color: colors.onSurface },
