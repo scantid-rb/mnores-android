@@ -19,7 +19,7 @@ export default function LoginScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { token, session, cacheAvailable, enterReadonly } = useSession();
+  const { token, session, cacheAvailable, enterReadonly, signIn } = useSession();
   const { online } = useConnectivity();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -39,7 +39,6 @@ export default function LoginScreen() {
     }
     setSubmitting(true);
     try {
-      const { signIn } = useSession();
       await signIn(username.trim(), password);
       router.replace("/inventory");
     } catch (e) {
