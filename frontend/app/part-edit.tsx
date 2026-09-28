@@ -6,7 +6,7 @@
 // component). Declaring it inside caused React to see a new component type on
 // every keystroke, remounting the TextInputs and dropping keyboard focus.
 
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
@@ -28,7 +28,9 @@ export default function PartEditScreen() {
   const { mode, rowUid } = useLocalSearchParams<{ mode: string; rowUid?: string }>();
   const isEdit = mode === "edit" && !!rowUid;
 
-  const { user } = useSession();
+  const { user, token, session, mode } = useSession();
+  if (mode === "readonly") return <Redirect href="/inventory" />;
+  if (!token || !session) return <Redirect href="/login" />;
   const fullEdit = canEditFields(user?.role);
 
   const { data: categories = [] } = useCategories();
