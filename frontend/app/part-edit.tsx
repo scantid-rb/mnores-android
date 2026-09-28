@@ -28,9 +28,7 @@ export default function PartEditScreen() {
   const { mode: routeMode, rowUid } = useLocalSearchParams<{ mode: string; rowUid?: string }>();
   const isEdit = routeMode === "edit" && !!rowUid;
 
-  const { user, token, session, mode } = useSession();
-  if (mode === "readonly") return <Redirect href="/inventory" />;
-  if (!token || !session) return <Redirect href="/login" />;
+  const { user, token, session, mode: accessMode } = useSession();
   const fullEdit = canEditFields(user?.role);
 
   const { data: categories = [] } = useCategories();
@@ -48,6 +46,9 @@ export default function PartEditScreen() {
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+
+  if (accessMode === "readonly") return <Redirect href="/inventory" />;
+  if (!token || !session) return <Redirect href="/login" />;
 
   useEffect(() => {
     if (isEdit && existing && !loaded) {
