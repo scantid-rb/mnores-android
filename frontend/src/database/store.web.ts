@@ -14,6 +14,7 @@ import {
   PendingPhoto,
   SessionRow,
   SessionUser,
+  User,
 } from "@/src/types";
 import { LocalStore } from "@/src/database/store.types";
 import { newQueueId } from "@/src/utils/id";
@@ -21,6 +22,7 @@ import { newQueueId } from "@/src/utils/id";
 const MAX_RETRIES = 5;
 const K = {
   session: "db.session",
+  users: "db.users",
   boats: "db.boats",
   categories: "db.categories",
   parts: "db.parts",
@@ -83,6 +85,7 @@ class WebStore implements LocalStore {
     await storage.removeItem(K.parts);
     await storage.removeItem(K.queue);
     await storage.removeItem(K.photos);
+    await storage.removeItem(K.users);
     await storage.removeItem(K.boats);
     await storage.removeItem(K.categories);
   }
@@ -95,9 +98,10 @@ class WebStore implements LocalStore {
   }
 
   async reconcileInventory(
-    data: { boats: Boat[]; categories: Category[]; parts: Part[] },
+    data: { boats: Boat[]; categories: Category[]; parts: Part[]; users?: User[] },
     protectedServerIds: number[],
   ): Promise<void> {
+    await writeJson(K.users, data.users ?? []);
     await writeJson(K.boats, data.boats);
     await writeJson(K.categories, data.categories);
 
@@ -186,6 +190,10 @@ class WebStore implements LocalStore {
 
     await writeJson(K.parts, merged);
     void serverIds;
+  }
+
+  async getUsers(): Promise<User[]> {
+    return readJson<User[]>(K.users, []);
   }
 
   async getBoats(): Promise<Boat[]> {
