@@ -6,6 +6,74 @@ import { APP_VERSION, API_VERSION } from "@/src/config";
 import { normalizeServerUrl } from "@/src/services/serverConfig";
 import { PushChange, PushResponse, SessionUser, SyncResponse } from "@/src/types";
 
+
+export interface ServerSettings {
+  app_name: string;
+  app_title: string;
+  company_name: string;
+  backup_interval_days: number;
+  backup_retention_days: number;
+  audit_retention_days: number;
+  disk_warning_percent: number;
+}
+
+interface ServerSettingsResponse {
+  ok: boolean;
+  settings: Record<string, string>;
+}
+
+function parseServerSettings(raw: Record<string, string>): ServerSettings {
+  return {
+    app_name: raw.app_name ?? "",
+    app_title: raw.app_title ?? "",
+    company_name: raw.company_name ?? "",
+    backup_interval_days: Number(raw.backup_interval_days),
+    backup_retention_days: Number(raw.backup_retention_days),
+    audit_retention_days: Number(raw.audit_retention_days),
+    disk_warning_percent: Number(raw.disk_warning_percent),
+  };
+}
+
+export async function apiGetSettings(token: string): Promise<ServerSettings> {
+  const r = await apiRequest<ServerSettingsResponse>("/api/settings", { token });
+  return parseServerSettings(r.settings);
+}
+
+export async function apiUpdateSettings(token: string, settings: ServerSettings): Promise<ServerSettings> {
+  const r = await apiRequest<ServerSettingsResponse>("/api/settings", {
+    method: "POST",
+    token,
+    body: settings,
+  });
+  return parseServerSettings(r.settings);
+}
+
+export interface ServerStatus {
+  ok: boolean;
+  app_version: string;
+  api_version: string;
+  schema_version: number;
+  sqlite_integrity: string;
+  database_size_bytes: number;
+  disk: {
+    free_bytes: number | null;
+    total_bytes: number | null;
+    free_percent: number | null;
+    warning_percent: number;
+    warning: boolean;
+  };
+  backup: {
+    last_auto: { name: string; mtime: number } | null;
+    last_run: number | null;
+    last_failure: string | null;
+  };
+  directories: Record<string, boolean>;
+}
+
+export async function apiGetStatus(token: string): Promise<ServerStatus> {
+  return apiRequest<ServerStatus>("/api/status", { token });
+}
+
 interface LoginResponse { ok: boolean; token: string; user: SessionUser; }
 interface MeResponse { ok: boolean; user: SessionUser; }
 
