@@ -94,7 +94,11 @@ export async function apiRenameCategory(token: string, id: number, name: string)
   return (await apiRequest<CategoryResponse>("/api/categories", { method: "POST", token, body: { action: "rename", id, name } })).category;
 }
 export async function apiDeleteCategory(token: string, id: number): Promise<void> {
-  await apiRequest<{ ok: boolean; deleted?: boolean; moved_parts?: number }>("/api/categories", { method: "POST", token, body: { action: "delete", id });
+  await apiRequest<{ ok: boolean; deleted?: boolean; moved_parts?: number }>("/api/categories", {
+    method: "POST",
+    token,
+    body: { action: "delete", id },
+  });
 }
 
 export async function apiGetAudit(token: string, params: { page?: number; operation?: string; object_type?: string; actor_username?: string } = {}): Promise<import("@/src/types").AuditResponse> {
