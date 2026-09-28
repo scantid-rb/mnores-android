@@ -102,3 +102,79 @@ export async function apiDeleteBoat(token: string, id: number): Promise<void> {
     body: { action: "delete", id },
   });
 }
+
+
+interface UsersResponse {
+  ok: boolean;
+  users: import("@/src/types").User[];
+}
+
+interface UserResponse {
+  ok: boolean;
+  user: import("@/src/types").User;
+}
+
+export async function apiGetUsers(token: string): Promise<import("@/src/types").User[]> {
+  const r = await apiRequest<UsersResponse>("/api/users", { token });
+  return r.users;
+}
+
+export async function apiCreateUser(
+  token: string,
+  input: {
+    username: string;
+    first_name: string;
+    last_name: string;
+    password: string;
+    password2: string;
+    role: import("@/src/types").Role;
+    boat_id: number | null;
+    is_active: boolean;
+  },
+): Promise<import("@/src/types").User> {
+  const r = await apiRequest<UserResponse>("/api/users", {
+    method: "POST",
+    token,
+    body: { action: "create", ...input },
+  });
+  return r.user;
+}
+
+export async function apiUpdateUser(
+  token: string,
+  input: {
+    id: number;
+    username: string;
+    first_name: string;
+    last_name: string;
+    password?: string;
+    password2?: string;
+    role: import("@/src/types").Role;
+    boat_id: number | null;
+    is_active: boolean;
+  },
+): Promise<import("@/src/types").User> {
+  const r = await apiRequest<UserResponse>("/api/users", {
+    method: "POST",
+    token,
+    body: { action: "update", ...input },
+  });
+  return r.user;
+}
+
+export async function apiToggleUser(token: string, id: number): Promise<import("@/src/types").User> {
+  const r = await apiRequest<UserResponse>("/api/users", {
+    method: "POST",
+    token,
+    body: { action: "toggle", id },
+  });
+  return r.user;
+}
+
+export async function apiDeleteUser(token: string, id: number): Promise<void> {
+  await apiRequest<{ ok: boolean; deleted?: boolean }>("/api/users", {
+    method: "POST",
+    token,
+    body: { action: "delete", id },
+  });
+}
