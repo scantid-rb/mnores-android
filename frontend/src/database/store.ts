@@ -217,6 +217,9 @@ class SqliteStore implements LocalStore {
   }
 
   async clearUserData(): Promise<void> {
+    // Switching identity/server invalidates the whole local dataset. Remove
+    // the complete private photo directory as well as all SQLite cache/queues.
+    await removeLocalFile(`${FileSystem.documentDirectory}photos/`);
     const db = await getDb();
     await db.withTransactionAsync(async () => {
       await db.runAsync("DELETE FROM pending_changes;");
@@ -225,6 +228,7 @@ class SqliteStore implements LocalStore {
       await db.runAsync("DELETE FROM users;");
       await db.runAsync("DELETE FROM boats;");
       await db.runAsync("DELETE FROM categories;");
+      await db.runAsync("DELETE FROM session;");
     });
   }
 
