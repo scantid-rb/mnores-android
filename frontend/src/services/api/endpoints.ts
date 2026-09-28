@@ -227,6 +227,17 @@ export async function apiRestoreBackup(token: string, name: string): Promise<{ s
 }
 
 export async function apiDownloadBackup(token: string, name: string, targetUri: string): Promise<string> {
+  // The same backup may be downloaded repeatedly. Remove the previous
+  // temporary copy first so the download always starts from a clean target.
+  try {
+    if (await FileSystem.getInfoAsync(targetUri).then((info) => info.exists)) {
+      await FileSystem.deleteAsync(targetUri, { idempotent: true });
+    }
+  } catch {
+    // If the temporary file cannot be inspected/removed, let downloadAsync
+    // report the actual download error instead of masking it here.
+  }
+
   const result = await FileSystem.downloadAsync(
     `${await getServerUrl()}/api/backups/${encodeURIComponent(name)}/download`,
     targetUri,
