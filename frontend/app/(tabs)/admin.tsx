@@ -32,6 +32,10 @@ const MODULES = [
     title: "Estado del sistema",
     description: "Estado técnico, almacenamiento, SQLite, backups y directorios del servidor.",
   },
+  {
+    title: "Backups",
+    description: "Crear, descargar, restaurar y eliminar copias de seguridad del servidor.",
+  },
 ];
 
 export default function AdministrationScreen() {
@@ -76,6 +80,7 @@ export default function AdministrationScreen() {
                 if (module.title === "Auditoría") router.push("/admin/audit");
                 if (module.title === "Configuración del servidor") router.push("/server-settings");
                 if (module.title === "Estado del sistema") router.push("/system-status");
+                if (module.title === "Backups") router.push("/backups");
               }}
             >
               <Text style={styles.cardTitle}>{module.title}</Text>
