@@ -51,7 +51,7 @@ export default function AdministrationScreen() {
         </View>
 
         {MODULES.map((module) => {
-          const enabled = module.title === "Barcos" || module.title === "Usuarios";
+          const enabled = true;
           return (
             <Pressable
               key={module.title}
@@ -60,6 +60,7 @@ export default function AdministrationScreen() {
               onPress={() => {
                 if (module.title === "Barcos") router.push("/admin/boats");
                 if (module.title === "Usuarios") router.push("/admin/users");
+                if (module.title === "Categorías") router.push("/admin/categories");
               }}
             >
               <Text style={styles.cardTitle}>{module.title}</Text>
