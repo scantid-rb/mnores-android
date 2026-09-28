@@ -96,6 +96,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     running.current = true;
     setStatus("syncing");
     setLastError(null);
+    setDiagnostics(null);
     try {
       const summary: SyncSummary = await runSync(token);
       setReceivedParts(summary.receivedParts);
