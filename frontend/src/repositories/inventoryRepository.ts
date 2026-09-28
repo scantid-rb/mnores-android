@@ -7,6 +7,7 @@ import {
   CreatePartInput,
   EditablePartFields,
   LocalPart,
+  User,
 } from "@/src/types";
 
 export const inventoryRepository = {
@@ -15,6 +16,9 @@ export const inventoryRepository = {
   },
   getCategories(): Promise<Category[]> {
     return localStore.getCategories();
+  },
+  getUsers(): Promise<User[]> {
+    return localStore.getUsers();
   },
   getBoats(): Promise<Boat[]> {
     return localStore.getBoats();
