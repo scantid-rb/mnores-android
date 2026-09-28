@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -143,7 +143,11 @@ export default function ServerSettingsScreen() {
         <View style={styles.headerSpacer} />
       </View>
 
-      <View style={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.card}>
           <Text style={styles.label}>Dirección del servidor</Text>
           <TextInput
@@ -234,7 +238,7 @@ export default function ServerSettingsScreen() {
             Estás configurando el servidor desde una sesión activa. El cambio cerrará esta sesión y borrará los datos locales antes de entrar al nuevo servidor.
           </Text>
         )}
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -254,7 +258,7 @@ const useStyles = makeStyles((colors) => ({
   backText: { fontSize: 34, lineHeight: 38, color: colors.onSurface },
   headerSpacer: { width: 44 },
   title: { flex: 1, textAlign: "center", fontSize: 20, fontWeight: "800", color: colors.onSurface },
-  content: { padding: 20, gap: 16 },
+  content: { padding: 20, gap: 16, paddingBottom: 40 },
   card: { backgroundColor: colors.surfaceSecondary, borderRadius: 16, padding: 20, gap: 10, borderWidth: 1, borderColor: colors.border },
   sectionTitle: { fontSize: 17, fontWeight: "800", color: colors.onSurface, marginBottom: 4 },
   label: { fontSize: 14, fontWeight: "700", color: colors.onSurface },
