@@ -9,6 +9,17 @@ export interface SessionUser {
   boat_id: number | null;
 }
 
+export interface User {
+  id: number;
+  username: string;
+  first_name: string;
+  last_name: string;
+  role: Role;
+  boat_id: number | null;
+  is_active: number;
+  is_primary_admin: number;
+}
+
 export interface Boat {
   id: number;
   name: string;
@@ -48,6 +59,7 @@ export interface SyncResponse {
   boats: Boat[];
   categories: Category[];
   parts: Part[];
+  users?: User[];
 }
 
 // Local persisted session row (metadata only — never the token/password).
