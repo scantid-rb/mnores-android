@@ -126,6 +126,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
     pushed: 0, ok: 0, conflicts: 0, failed: 0, notFound: 0,
     authError: false, networkError: false, serverError: false, diagnostics: null,
     receivedParts: 0, receivedActiveParts: 0, receivedDeletedParts: 0, cachedParts: 0,
+    protectedIds: [], missingActiveIds: [],
   };
 
   const pending = await localStore.getPendingChanges();
