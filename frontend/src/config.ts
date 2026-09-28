@@ -7,8 +7,8 @@ export const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL || "https://devmn.atwebpages.com";
 
 // The mobile app version is independent from the backend API version.
-export const APP_VERSION = "0.1.2";
-export const API_VERSION = "1.4.3";
+export const APP_VERSION = "0.1.3";
+export const API_VERSION = "1.4.4";
 
 // Bounded network timeout for a single request.
-export const REQUEST_TIMEOUT_MS = 15000;
+export const REQUEST_TIMEOUT_MS = 20000;
