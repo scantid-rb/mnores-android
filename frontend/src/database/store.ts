@@ -272,8 +272,13 @@ class SqliteStore implements LocalStore {
         if (protectedSet.has(p.id)) continue;
         if (p.deleted_at) {
           // A tombstone removes every stale local duplicate for this server id.
+          const localRows = await db.getAllAsync<{ local_photo_path: string | null }>(
+            "SELECT local_photo_path FROM parts WHERE server_id = ?;",
+            [p.id],
+          );
           await db.runAsync("DELETE FROM photo_queue WHERE server_id = ?;", [p.id]);
           await db.runAsync("DELETE FROM parts WHERE server_id = ?;", [p.id]);
+          for (const row of localRows) await removeLocalFile(row.local_photo_path);
           continue;
         }
         // Match by server_id first. If an older/local row already owns the
@@ -326,7 +331,12 @@ class SqliteStore implements LocalStore {
       );
       for (const row of localSynced) {
         if (!serverIds.has(row.server_id) && !protectedSet.has(row.server_id)) {
+          const localPhoto = await db.getFirstAsync<{ local_photo_path: string | null }>(
+            "SELECT local_photo_path FROM parts WHERE row_uid = ?;",
+            [row.row_uid],
+          );
           await db.runAsync("DELETE FROM parts WHERE row_uid = ?;", [row.row_uid]);
+          await removeLocalFile(localPhoto?.local_photo_path);
         }
       }
     });
