@@ -7,11 +7,16 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { inventoryRepository } from "@/src/repositories/inventoryRepository";
 import { useSync } from "@/src/state/SyncContext";
+import { useSession } from "@/src/state/SessionContext";
 import { CreatePartInput, EditablePartFields } from "@/src/types";
 import { newLocalId } from "@/src/utils/id";
 
 function useAfterMutation() {
   const qc = useQueryClient();
+  const { mode } = useSession();
+  const assertWritable = () => {
+    if (mode === "readonly") throw new Error("El inventario está en modo solo lectura.");
+  };
   const { syncNow, refreshPending } = useSync();
   return async (rowUid?: string) => {
     qc.invalidateQueries({ queryKey: ["parts"] });
@@ -25,8 +30,10 @@ function useAfterMutation() {
 export function useCreatePart() {
   const after = useAfterMutation();
   return useMutation({
-    mutationFn: (input: Omit<CreatePartInput, "local_id">) =>
-      inventoryRepository.createPart({ ...input, local_id: newLocalId() }),
+    mutationFn: (input: Omit<CreatePartInput, "local_id">) => {
+      assertWritable();
+      return inventoryRepository.createPart({ ...input, local_id: newLocalId() });
+    },
     onSuccess: (part) => after(part.row_uid),
   });
 }
@@ -34,8 +41,10 @@ export function useCreatePart() {
 export function useUpdatePart() {
   const after = useAfterMutation();
   return useMutation({
-    mutationFn: ({ rowUid, fields }: { rowUid: string; fields: EditablePartFields }) =>
-      inventoryRepository.updatePart(rowUid, fields),
+    mutationFn: ({ rowUid, fields }: { rowUid: string; fields: EditablePartFields }) => {
+      assertWritable();
+      return inventoryRepository.updatePart(rowUid, fields);
+    },
     onSuccess: (_r, vars) => after(vars.rowUid),
   });
 }
@@ -43,7 +52,10 @@ export function useUpdatePart() {
 export function useDeletePart() {
   const after = useAfterMutation();
   return useMutation({
-    mutationFn: (rowUid: string) => inventoryRepository.deletePart(rowUid),
+    mutationFn: (rowUid: string) => {
+      assertWritable();
+      return inventoryRepository.deletePart(rowUid);
+    },
     onSuccess: (_r, rowUid) => after(rowUid),
   });
 }
