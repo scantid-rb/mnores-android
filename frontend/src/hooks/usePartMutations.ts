@@ -14,9 +14,6 @@ import { newLocalId } from "@/src/utils/id";
 function useAfterMutation() {
   const qc = useQueryClient();
   const { mode } = useSession();
-  const assertWritable = () => {
-    if (mode === "readonly") throw new Error("El inventario está en modo solo lectura.");
-  };
   const { syncNow, refreshPending } = useSync();
   return async (rowUid?: string) => {
     qc.invalidateQueries({ queryKey: ["parts"] });
@@ -31,7 +28,7 @@ export function useCreatePart() {
   const after = useAfterMutation();
   return useMutation({
     mutationFn: (input: Omit<CreatePartInput, "local_id">) => {
-      assertWritable();
+      if (mode === "readonly") throw new Error("El inventario está en modo solo lectura.");
       return inventoryRepository.createPart({ ...input, local_id: newLocalId() });
     },
     onSuccess: (part) => after(part.row_uid),
@@ -42,7 +39,7 @@ export function useUpdatePart() {
   const after = useAfterMutation();
   return useMutation({
     mutationFn: ({ rowUid, fields }: { rowUid: string; fields: EditablePartFields }) => {
-      assertWritable();
+      if (mode === "readonly") throw new Error("El inventario está en modo solo lectura.");
       return inventoryRepository.updatePart(rowUid, fields);
     },
     onSuccess: (_r, vars) => after(vars.rowUid),
@@ -53,7 +50,7 @@ export function useDeletePart() {
   const after = useAfterMutation();
   return useMutation({
     mutationFn: (rowUid: string) => {
-      assertWritable();
+      if (mode === "readonly") throw new Error("El inventario está en modo solo lectura.");
       return inventoryRepository.deletePart(rowUid);
     },
     onSuccess: (_r, rowUid) => after(rowUid),
