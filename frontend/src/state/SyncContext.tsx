@@ -44,6 +44,7 @@ function invalidateInventory() {
   queryClient.invalidateQueries({ queryKey: ["parts"] });
   queryClient.invalidateQueries({ queryKey: ["categories"] });
   queryClient.invalidateQueries({ queryKey: ["boats"] });
+  queryClient.invalidateQueries({ queryKey: ["users"] });
   queryClient.invalidateQueries({ queryKey: ["counts"] });
 }
 
