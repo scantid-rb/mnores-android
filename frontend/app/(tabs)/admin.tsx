@@ -20,6 +20,10 @@ const MODULES = [
     title: "Categorías",
     description: "Gestión de las categorías globales del inventario.",
   },
+  {
+    title: "Auditoría",
+    description: "Consulta de todas las operaciones registradas en el sistema.",
+  },
 ];
 
 export default function AdministrationScreen() {
@@ -61,6 +65,7 @@ export default function AdministrationScreen() {
                 if (module.title === "Barcos") router.push("/admin/boats");
                 if (module.title === "Usuarios") router.push("/admin/users");
                 if (module.title === "Categorías") router.push("/admin/categories");
+                if (module.title === "Auditoría") router.push("/admin/audit");
               }}
             >
               <Text style={styles.cardTitle}>{module.title}</Text>
