@@ -16,6 +16,7 @@ import {
   PendingPhoto,
   SessionRow,
   SessionUser,
+  User,
 } from "@/src/types";
 import { LocalStore } from "@/src/database/store.types";
 import { newQueueId } from "@/src/utils/id";
@@ -47,6 +48,17 @@ class SqliteStore implements LocalStore {
         role TEXT NOT NULL,
         boat_id INTEGER,
         last_sync_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY,
+        username TEXT NOT NULL,
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        boat_id INTEGER,
+        is_active INTEGER NOT NULL,
+        is_primary_admin INTEGER NOT NULL DEFAULT 0
       );
 
       CREATE TABLE IF NOT EXISTS boats (
@@ -199,6 +211,7 @@ class SqliteStore implements LocalStore {
       await db.runAsync("DELETE FROM pending_changes;");
       await db.runAsync("DELETE FROM photo_queue;");
       await db.runAsync("DELETE FROM parts;");
+      await db.runAsync("DELETE FROM users;");
       await db.runAsync("DELETE FROM boats;");
       await db.runAsync("DELETE FROM categories;");
     });
@@ -221,8 +234,14 @@ class SqliteStore implements LocalStore {
     const serverIds = new Set(data.parts.filter((p) => !p.deleted_at).map((p) => p.id));
 
     await db.withTransactionAsync(async () => {
-      // Boats & categories are server-authoritative; replace wholesale.
-      await db.execAsync("DELETE FROM boats; DELETE FROM categories;");
+      // Administrative catalogs are server-authoritative; replace wholesale.
+      await db.execAsync("DELETE FROM users; DELETE FROM boats; DELETE FROM categories;");
+      for (const u of data.users ?? []) {
+        await db.runAsync(
+          "INSERT INTO users (id, username, first_name, last_name, role, boat_id, is_active, is_primary_admin) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
+          [u.id, u.username, u.first_name, u.last_name, u.role, u.boat_id ?? null, u.is_active ?? 1, u.is_primary_admin ?? 0],
+        );
+      }
       for (const b of data.boats) {
         await db.runAsync(
           "INSERT INTO boats (id, name, registration, is_active, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?);",
@@ -300,6 +319,13 @@ class SqliteStore implements LocalStore {
         }
       }
     });
+  }
+
+  async getUsers(): Promise<User[]> {
+    const db = await getDb();
+    return db.getAllAsync<User>(
+      "SELECT id, username, first_name, last_name, role, boat_id, is_active, is_primary_admin FROM users ORDER BY username COLLATE NOCASE;",
+    );
   }
 
   async getBoats(): Promise<Boat[]> {
