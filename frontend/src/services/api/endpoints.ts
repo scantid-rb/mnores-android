@@ -15,6 +15,7 @@ export interface HandshakeResponse {
   app_title: string;
   app_version: string;
   api_version: string;
+  installed: boolean;
 }
 
 export async function apiHandshake(serverUrl: string): Promise<HandshakeResponse> {
