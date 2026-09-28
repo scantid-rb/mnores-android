@@ -4,6 +4,7 @@
 // transaction so an operation can never be lost mid-write.
 
 import * as SQLite from "expo-sqlite";
+import * as FileSystem from "expo-file-system/legacy";
 
 import {
   Boat,
@@ -33,6 +34,16 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+async function removeLocalFile(path: string | null | undefined): Promise<void> {
+  if (!path) return;
+  try {
+    const info = await FileSystem.getInfoAsync(path);
+    if (info.exists) await FileSystem.deleteAsync(path, { idempotent: true });
+  } catch {
+    // Local cleanup must never make the database operation fail.
+  }
 }
 
 class SqliteStore implements LocalStore {
@@ -479,6 +490,8 @@ class SqliteStore implements LocalStore {
     const part = await this.getPart(rowUid);
     if (!part) return;
 
+    const localPhotoPath = part.local_photo_path;
+
     await db.withTransactionAsync(async () => {
       if (part.server_id == null) {
         // Never reached the server: drop the local create and its queue entry.
@@ -488,6 +501,7 @@ class SqliteStore implements LocalStore {
       } else {
         // Pending updates are superseded by the delete.
         await db.runAsync("DELETE FROM pending_changes WHERE row_uid = ? AND action = 'update' AND status = 'pending';", [rowUid]);
+        await db.runAsync("DELETE FROM photo_queue WHERE row_uid = ?;", [rowUid]);
         await db.runAsync("UPDATE parts SET pending_delete = 1, sync_state = 'pending' WHERE row_uid = ?;", [rowUid]);
         await db.runAsync(
           `INSERT INTO pending_changes (queue_id, action, entity, entity_id, row_uid, client_local_id, payload, base_updated_at, created_at, retry_count, last_error, status)
@@ -496,6 +510,8 @@ class SqliteStore implements LocalStore {
         );
       }
     });
+
+    await removeLocalFile(localPhotoPath);
   }
 
   // -------------------------------------------------------------- queue
@@ -564,18 +580,25 @@ class SqliteStore implements LocalStore {
 
   async applyDeleteOk(queueId: string, serverId: number): Promise<void> {
     const db = await getDb();
+    let localPhotoPath: string | null = null;
     await db.withTransactionAsync(async () => {
-      const row = await db.getFirstAsync<{ row_uid: string }>("SELECT row_uid FROM parts WHERE server_id = ? LIMIT 1;", [serverId]);
+      const row = await db.getFirstAsync<{ row_uid: string; local_photo_path: string | null }>(
+        "SELECT row_uid, local_photo_path FROM parts WHERE server_id = ? LIMIT 1;",
+        [serverId],
+      );
+      localPhotoPath = row?.local_photo_path ?? null;
       await db.runAsync("DELETE FROM photo_queue WHERE server_id = ? OR row_uid = ?;", [serverId, row?.row_uid ?? ""]);
       await db.runAsync("DELETE FROM parts WHERE server_id = ?;", [serverId]);
       await db.runAsync("DELETE FROM pending_changes WHERE queue_id = ?;", [queueId]);
     });
+    await removeLocalFile(localPhotoPath);
   }
 
   async setLocalPhoto(rowUid: string, localPath: string): Promise<void> {
     const db = await getDb();
     const part = await this.getPart(rowUid);
     if (!part) throw new Error("Pieza no encontrada");
+    const previousLocalPath = part.local_photo_path;
     await db.withTransactionAsync(async () => {
       await db.runAsync("UPDATE parts SET local_photo_path = ? WHERE row_uid = ?;", [localPath, rowUid]);
       await db.runAsync("DELETE FROM photo_queue WHERE row_uid = ?;", [rowUid]);
@@ -584,6 +607,9 @@ class SqliteStore implements LocalStore {
         [newQueueId(), rowUid, part.server_id, localPath, nowIso()],
       );
     });
+    if (previousLocalPath && previousLocalPath !== localPath) {
+      await removeLocalFile(previousLocalPath);
+    }
   }
 
   async getPendingPhotos(): Promise<PendingPhoto[]> {
