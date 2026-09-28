@@ -40,3 +40,11 @@ export function useCounts() {
     queryFn: () => inventoryRepository.getCounts(),
   });
 }
+
+
+export function useUsers() {
+  return useQuery({
+    queryKey: ["users"],
+    queryFn: () => inventoryRepository.getUsers(),
+  });
+}
