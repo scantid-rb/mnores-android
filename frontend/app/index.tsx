@@ -1,5 +1,5 @@
-// Session gate. While the session restores, show a splash. Then redirect to
-// the inventory if a session exists (even offline), otherwise to login.
+// Session/access gate. A stored authenticated session opens the normal app;
+// otherwise the login screen decides whether local read-only access is available.
 
 import { Redirect } from "expo-router";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
@@ -8,7 +8,7 @@ import { useSession } from "@/src/state/SessionContext";
 import { useTheme } from "@/src/theme";
 
 export default function Index() {
-  const { loading, token, session } = useSession();
+  const { loading, token, session, mode } = useSession();
   const { colors } = useTheme();
 
   if (loading) {
@@ -20,22 +20,11 @@ export default function Index() {
     );
   }
 
-  // A stored session (token + metadata) lets the user in offline.
-  if (token && session) {
-    return <Redirect href="/inventory" />;
-  }
-
+  if ((token && session) || mode === "readonly") return <Redirect href="/inventory" />;
   return <Redirect href="/login" />;
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "800",
-  },
+  container: { flex: 1, alignItems: "center", justifyContent: "center" },
+  title: { fontSize: 24, fontWeight: "800" },
 });
