@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -185,29 +185,51 @@ export default function AuditAdminScreen() {
 
           {!loading && rows.length === 0 && <Text style={styles.empty}>No hay registros para los filtros seleccionados.</Text>}
 
-          {selected && (
-            <View style={styles.detailCard}>
-              <View style={styles.detailHeader}>
-                <Text style={styles.sectionTitle}>Detalle</Text>
-                <Pressable onPress={() => setSelected(null)}><Text style={styles.cancel}>Cerrar</Text></Pressable>
-              </View>
-              <Text style={styles.detailLabel}>Fecha</Text><Text style={styles.detailValue}>{dateText(selected.at_utc)}</Text>
-              <Text style={styles.detailLabel}>Usuario</Text><Text style={styles.detailValue}>{selected.actor_username || "—"}</Text>
-              <Text style={styles.detailLabel}>Operación</Text><Text style={styles.detailValue}>{operationLabel(selected.operation)}</Text>
-              <Text style={styles.detailLabel}>Objeto</Text>
-              <Text style={styles.detailValue}>{objectLabel(selected.object_type)}{selected.object_id != null ? " #" + selected.object_id : ""}</Text>
-              <Text style={styles.detailLabel}>Barco</Text>
-              <Text style={styles.detailValue}>{selected.boat_name || (selected.boat_id != null ? "ID " + selected.boat_id : "—")}</Text>
-              <Text style={styles.detailSection}>Cambios</Text>
-              {changedFields(selected).length > 0 ? changedFields(selected).map((field) => (
-                <View key={field} style={styles.changeRow}>
-                  <Text style={styles.changeField}>{field}</Text>
-                  <Text style={styles.changeOld}>Anterior: {valueText(selected.old_data?.[field])}</Text>
-                  <Text style={styles.changeNew}>Nuevo: {valueText(selected.new_data?.[field])}</Text>
+          <Modal
+            visible={selected !== null}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setSelected(null)}
+          >
+            <View style={styles.modalOverlay}>
+              <Pressable style={styles.modalBackdrop} onPress={() => setSelected(null)} />
+              {selected && (
+                <View style={styles.modalSheet}>
+                  <View style={styles.modalHandle} />
+                  <View style={styles.detailHeader}>
+                    <Text style={styles.sectionTitle}>Detalle</Text>
+                    <Pressable onPress={() => setSelected(null)} hitSlop={10}>
+                      <Text style={styles.cancel}>Cerrar</Text>
+                    </Pressable>
+                  </View>
+                  <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.detailContent}>
+                    <Text style={styles.detailLabel}>Fecha</Text>
+                    <Text style={styles.detailValue}>{dateText(selected.at_utc)}</Text>
+                    <Text style={styles.detailLabel}>Usuario</Text>
+                    <Text style={styles.detailValue}>{selected.actor_username || "—"}</Text>
+                    <Text style={styles.detailLabel}>Operación</Text>
+                    <Text style={styles.detailValue}>{operationLabel(selected.operation)}</Text>
+                    <Text style={styles.detailLabel}>Objeto</Text>
+                    <Text style={styles.detailValue}>
+                      {objectLabel(selected.object_type)}{selected.object_id != null ? " #" + selected.object_id : ""}
+                    </Text>
+                    <Text style={styles.detailLabel}>Barco</Text>
+                    <Text style={styles.detailValue}>
+                      {selected.boat_name || (selected.boat_id != null ? "ID " + selected.boat_id : "—")}
+                    </Text>
+                    <Text style={styles.detailSection}>Cambios</Text>
+                    {changedFields(selected).length > 0 ? changedFields(selected).map((field) => (
+                      <View key={field} style={styles.changeRow}>
+                        <Text style={styles.changeField}>{field}</Text>
+                        <Text style={styles.changeOld}>Anterior: {valueText(selected.old_data?.[field])}</Text>
+                        <Text style={styles.changeNew}>Nuevo: {valueText(selected.new_data?.[field])}</Text>
+                      </View>
+                    )) : <Text style={styles.emptyChange}>Sin datos de cambio registrados.</Text>}
+                  </ScrollView>
                 </View>
-              )) : <Text style={styles.emptyChange}>Sin datos de cambio registrados.</Text>}
+              )}
             </View>
-          )}
+          </Modal>
 
           {pages > 1 && (
             <View style={styles.pagination}>
@@ -261,7 +283,12 @@ const useStyles = makeStyles((colors) => ({
   date: { fontSize: 11, color: colors.muted },
   actor: { fontSize: 13, fontWeight: "700", color: colors.brandPrimary },
   object: { fontSize: 12, color: colors.onSurfaceSecondary },
-  detailCard: { backgroundColor: colors.surfaceSecondary, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.brandPrimary, gap: 6 },
+  modalOverlay: { flex: 1, justifyContent: "flex-end" },
+  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
+  modalSheet: { maxHeight: "82%", backgroundColor: colors.surfaceSecondary, borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 18, paddingTop: 10, paddingBottom: 24, borderWidth: 1, borderColor: colors.border },
+  modalHandle: { alignSelf: "center", width: 42, height: 4, borderRadius: 2, backgroundColor: colors.muted, marginBottom: 12 },
+  detailContent: { paddingBottom: 12, gap: 6 },
+
   detailHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
   cancel: { fontSize: 13, fontWeight: "700", color: colors.brandPrimary },
   detailLabel: { fontSize: 11, fontWeight: "700", color: colors.muted, marginTop: 4 },
