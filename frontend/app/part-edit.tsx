@@ -47,9 +47,6 @@ export default function PartEditScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
-  if (accessMode === "readonly") return <Redirect href="/inventory" />;
-  if (!token || !session) return <Redirect href="/login" />;
-
   useEffect(() => {
     if (isEdit && existing && !loaded) {
       // Hydrate local form state from asynchronously loaded SQLite data.
@@ -72,6 +69,9 @@ export default function PartEditScreen() {
   }, [boats, existing, user, isEdit, boatId]);
 
   const parsedQty = Math.max(0, parseInt(quantity || "0", 10) || 0);
+
+  if (accessMode === "readonly") return <Redirect href="/inventory" />;
+  if (!token || !session) return <Redirect href="/login" />;
 
   const onSave = () => {
     setError(null);
