@@ -13,7 +13,6 @@ import { newLocalId } from "@/src/utils/id";
 
 function useAfterMutation() {
   const qc = useQueryClient();
-  const { mode } = useSession();
   const { syncNow, refreshPending } = useSync();
   return async (rowUid?: string) => {
     qc.invalidateQueries({ queryKey: ["parts"] });
@@ -25,6 +24,7 @@ function useAfterMutation() {
 }
 
 export function useCreatePart() {
+  const { mode } = useSession();
   const after = useAfterMutation();
   return useMutation({
     mutationFn: (input: Omit<CreatePartInput, "local_id">) => {
@@ -36,6 +36,7 @@ export function useCreatePart() {
 }
 
 export function useUpdatePart() {
+  const { mode } = useSession();
   const after = useAfterMutation();
   return useMutation({
     mutationFn: ({ rowUid, fields }: { rowUid: string; fields: EditablePartFields }) => {
@@ -47,6 +48,7 @@ export function useUpdatePart() {
 }
 
 export function useDeletePart() {
+  const { mode } = useSession();
   const after = useAfterMutation();
   return useMutation({
     mutationFn: (rowUid: string) => {
