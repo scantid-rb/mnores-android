@@ -51,14 +51,15 @@ export default function AdministrationScreen() {
         </View>
 
         {MODULES.map((module) => {
-          const enabled = module.title === "Barcos";
+          const enabled = module.title === "Barcos" || module.title === "Usuarios";
           return (
             <Pressable
               key={module.title}
               style={[styles.card, !enabled && styles.cardDisabled]}
               disabled={!enabled}
               onPress={() => {
-                if (enabled) router.push("/admin/boats");
+                if (module.title === "Barcos") router.push("/admin/boats");
+                if (module.title === "Usuarios") router.push("/admin/users");
               }}
             >
               <Text style={styles.cardTitle}>{module.title}</Text>
