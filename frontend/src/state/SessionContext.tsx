@@ -87,6 +87,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const enterReadonly = useCallback(async () => {
     const counts = await localStore.getCounts();
     if (counts.parts <= 0) return;
+    await sessionRepository.logout();
     queryClient.clear();
     setToken(null);
     setUser(null);
