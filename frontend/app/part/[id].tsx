@@ -4,7 +4,7 @@
 
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -46,6 +46,7 @@ export default function PartDetailScreen() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
 
   const categoryName =
     part?.category_id != null ? categories.find((c) => c.id === part.category_id)?.name ?? "—" : "—";
@@ -143,17 +144,25 @@ export default function PartDetailScreen() {
 
             <View style={styles.card}>
               {part.local_photo_path || part.photo_path ? (
-                <Image
-                  source={
-                    part.local_photo_path
-                      ? { uri: part.local_photo_path }
-                      : token && part.server_id
-                        ? { uri: remotePartPhotoUrl(part.server_id), headers: { Authorization: `Bearer ${token}` } }
-                        : undefined
-                  }
-                  style={styles.photo}
-                  contentFit="cover"
-                />
+                <Pressable
+                  onPress={() => setPhotoViewerOpen(true)}
+                  style={styles.photoPressable}
+                  accessibilityRole="button"
+                  accessibilityLabel="Ampliar foto"
+                  testID="detail-photo-button"
+                >
+                  <Image
+                    source={
+                      part.local_photo_path
+                        ? { uri: part.local_photo_path }
+                        : token && part.server_id
+                          ? { uri: remotePartPhotoUrl(part.server_id), headers: { Authorization: `Bearer ${token}` } }
+                          : undefined
+                    }
+                    style={styles.photo}
+                    contentFit="contain"
+                  />
+                </Pressable>
               ) : (
                 <Text style={styles.muted}>Sin foto</Text>
               )}
@@ -169,6 +178,38 @@ export default function PartDetailScreen() {
               )}
               {!!photoError && <Text style={styles.error}>{photoError}</Text>}
               <Field label="Foto" value={part.photo_path || part.local_photo_path ? "Adjunta" : "Sin foto"} />
+
+              <Modal
+                visible={photoViewerOpen}
+                transparent
+                animationType="fade"
+                statusBarTranslucent
+                onRequestClose={() => setPhotoViewerOpen(false)}
+              >
+                <View style={styles.photoViewer}>
+                  <Pressable
+                    style={styles.photoViewerClose}
+                    onPress={() => setPhotoViewerOpen(false)}
+                    hitSlop={12}
+                    accessibilityRole="button"
+                    accessibilityLabel="Cerrar foto ampliada"
+                    testID="detail-photo-close"
+                  >
+                    <Text style={styles.photoViewerCloseText}>×</Text>
+                  </Pressable>
+                  <Image
+                    source={
+                      part.local_photo_path
+                        ? { uri: part.local_photo_path }
+                        : token && part.server_id
+                          ? { uri: remotePartPhotoUrl(part.server_id), headers: { Authorization: `Bearer ${token}` } }
+                          : undefined
+                    }
+                    style={styles.photoViewerImage}
+                    contentFit="contain"
+                  />
+                </View>
+              </Modal>
               <Field
                 label="Actualizado"
                 value={part.updated_at ? new Date(part.updated_at).toLocaleString() : "—"}
@@ -239,7 +280,35 @@ const useStyles = makeStyles((colors) => ({
   qtyCenter: { alignItems: "center", minWidth: 90 },
   qtyValue: { fontSize: 44, fontWeight: "800", color: colors.brandPrimary },
   qtyLabel: { fontSize: 14, color: colors.muted },
-  photo: { width: "100%", height: 220, borderRadius: 12 },
+  photoPressable: {
+    width: "100%",
+    height: 220,
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: colors.surface,
+  },
+  photo: { width: "100%", height: "100%", borderRadius: 12 },
+  photoViewer: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.96)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+  },
+  photoViewerImage: { width: "100%", height: "100%" },
+  photoViewerClose: {
+    position: "absolute",
+    top: 16,
+    right: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    zIndex: 2,
+  },
+  photoViewerCloseText: { color: "#FFFFFF", fontSize: 34, fontWeight: "400", lineHeight: 38 },
   photoActions: { flexDirection: "row", gap: 10 },
   photoBtn: { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingVertical: 12, alignItems: "center" },
   photoBtnText: { fontSize: 14, fontWeight: "700", color: colors.onSurface },
