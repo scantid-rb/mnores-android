@@ -49,7 +49,11 @@ export default function ServerSettingsScreen() {
   }, [token, canManageSettings]);
 
   useEffect(() => {
-    if (canManageSettings) loadSettings();
+    if (!canManageSettings) return;
+    const timer = setTimeout(() => {
+      void loadSettings();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [canManageSettings, loadSettings]);
 
   const saveSettings = async () => {
