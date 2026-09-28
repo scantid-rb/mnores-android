@@ -25,8 +25,12 @@ const MODULES = [
     description: "Consulta de todas las operaciones registradas en el sistema.",
   },
   {
-    title: "Servidor",
-    description: "Comprobar o cambiar el servidor al que se conecta esta aplicación.",
+    title: "Configuración del servidor",
+    description: "Identidad, backups, auditoría y umbral de espacio del servidor.",
+  },
+  {
+    title: "Estado del sistema",
+    description: "Estado técnico, almacenamiento, SQLite, backups y directorios del servidor.",
   },
 ];
 
@@ -70,7 +74,8 @@ export default function AdministrationScreen() {
                 if (module.title === "Usuarios") router.push("/admin/users");
                 if (module.title === "Categorías") router.push("/admin/categories");
                 if (module.title === "Auditoría") router.push("/admin/audit");
-                if (module.title === "Servidor") router.push("/server-settings");
+                if (module.title === "Configuración del servidor") router.push("/server-settings");
+                if (module.title === "Estado del sistema") router.push("/system-status");
               }}
             >
               <Text style={styles.cardTitle}>{module.title}</Text>
