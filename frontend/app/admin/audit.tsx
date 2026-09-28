@@ -78,7 +78,11 @@ export default function AuditAdminScreen() {
 
   useEffect(() => {
     if (!allowed) { router.replace("/inventory"); return; }
-    if (online) void load(1);
+    if (!online) return;
+    const timer = setTimeout(() => {
+      void load(1);
+    }, 0);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowed, online, token, router]);
 
