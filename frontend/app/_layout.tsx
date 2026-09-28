@@ -26,7 +26,7 @@ export default function RootLayout() {
           <KeyboardProvider>
             <SessionProvider>
               <SyncProvider>
-                <StatusBar style="dark" />
+                <StatusBar style="auto" />
                 <Stack screenOptions={{ headerShown: false }} />
               </SyncProvider>
             </SessionProvider>
