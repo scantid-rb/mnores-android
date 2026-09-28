@@ -1,23 +1,23 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
-    "version": "1.0.0",
+    "name": "ShipInventory",
+    "slug": "shipinventory",
+    "version": "0.1.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "shipinventory",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.mnoresandroidarch.c58xm2"
+      "bundleIdentifier": "com.shipinventory.x6tente.app"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0D1B2A"
       },
-      "package": "com.emergent.mnoresandroidarch.c58xm2",
-      "usesCleartextTraffic": true
+      "package": "com.shipinventory.x6tente.app",
+      "usesCleartextTraffic": false
     },
     "web": {
       "bundler": "metro",
