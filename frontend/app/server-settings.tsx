@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from "react-native";
-import { SymbolView } from "expo-symbols";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -178,7 +177,8 @@ export default function ServerSettingsScreen() {
             <Text style={styles.resultLine}>Título: {handshake.app_title}</Text>
             <Text style={styles.resultLine}>Versión del servidor: {handshake.app_version}</Text>
             <Text style={styles.resultLine}>API del servidor: {handshake.api_version}</Text>
-            <Text style={styles.resultLine}>API requerida por la app: {API_VERSION}</Text>\n            {!handshake.installed && <Text style={styles.resultLine}>El servidor debe completarse mediante su asistente de instalación antes de utilizarlo.</Text>}
+            <Text style={styles.resultLine}>API requerida por la app: {API_VERSION}</Text>
+            {!handshake.installed && <Text style={styles.resultLine}>El servidor debe completarse mediante su asistente de instalación antes de utilizarlo.</Text>}
           </View>
         )}
 
