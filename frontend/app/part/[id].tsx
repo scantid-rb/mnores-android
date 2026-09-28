@@ -4,7 +4,7 @@
 
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { Image } from "expo-image";
@@ -209,7 +209,8 @@ export default function PartDetailScreen() {
                 statusBarTranslucent
                 onRequestClose={resetPhotoZoom}
               >
-                <View style={styles.photoViewer}>
+                <GestureHandlerRootView style={styles.photoViewerRoot}>
+                  <View style={styles.photoViewer}>
                   <Pressable
                     style={styles.photoViewerClose}
                     onPress={resetPhotoZoom}
@@ -235,7 +236,8 @@ export default function PartDetailScreen() {
                       />
                     </Animated.View>
                   </GestureDetector>
-                </View>
+                  </View>
+                </GestureHandlerRootView>
               </Modal>
               <Field
                 label="Actualizado"
@@ -315,6 +317,7 @@ const useStyles = makeStyles((colors) => ({
     backgroundColor: colors.surface,
   },
   photo: { width: "100%", height: "100%", borderRadius: 12 },
+  photoViewerRoot: { flex: 1 },
   photoViewer: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.96)",
