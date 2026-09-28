@@ -183,3 +183,29 @@ export interface PushResponse {
   server_time: string;
   results: PushResult[];
 }
+
+export interface AuditEntry {
+  id: number;
+  at_utc: string;
+  actor_id: number | null;
+  actor_username: string | null;
+  operation: string;
+  object_type: string;
+  object_id: number | null;
+  boat_id: number | null;
+  boat_name: string | null;
+  old_data: Record<string, unknown> | null;
+  new_data: Record<string, unknown> | null;
+}
+
+export interface AuditResponse {
+  ok: boolean;
+  rows: AuditEntry[];
+  page: number;
+  per_page: number;
+  total: number;
+  pages: number;
+  operations: string[];
+  object_types: string[];
+  actors: string[];
+}
