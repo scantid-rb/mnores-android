@@ -24,6 +24,10 @@ const MODULES = [
     title: "Auditoría",
     description: "Consulta de todas las operaciones registradas en el sistema.",
   },
+  {
+    title: "Servidor",
+    description: "Comprobar o cambiar el servidor al que se conecta esta aplicación.",
+  },
 ];
 
 export default function AdministrationScreen() {
@@ -66,6 +70,7 @@ export default function AdministrationScreen() {
                 if (module.title === "Usuarios") router.push("/admin/users");
                 if (module.title === "Categorías") router.push("/admin/categories");
                 if (module.title === "Auditoría") router.push("/admin/audit");
+                if (module.title === "Servidor") router.push("/server-settings");
               }}
             >
               <Text style={styles.cardTitle}>{module.title}</Text>
