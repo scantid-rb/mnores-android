@@ -6,7 +6,7 @@
 import { ApiError } from "@/src/services/api/client";
 import { uploadPartPhoto } from "@/src/services/photos/photoService";
 import * as FileSystem from "expo-file-system/legacy";
-import { apiGetBoats, apiGetSync, apiGetUsers, apiPush } from "@/src/services/api/endpoints";
+import { apiGetBoats, apiGetCategories, apiGetSync, apiGetUsers, apiPush } from "@/src/services/api/endpoints";
 import { localStore } from "@/src/database/store";
 import { LocalPart, Part, PendingChange, PushChange, PushResult } from "@/src/types";
 
@@ -308,28 +308,26 @@ export async function pullAndReconcile(token: string): Promise<{ receivedParts: 
   // Boats are a small administrative catalog and physical boat deletion does
   // not leave a tombstone. Fetch the authoritative boat snapshot directly
   // after every sync so a deleted boat can never remain in the local cache.
-  const [authoritativeBoats, authoritativeUsers] = await Promise.all([
+  const [authoritativeBoats, authoritativeCategories, authoritativeUsers] = await Promise.all([
     apiGetBoats(token),
+    apiGetCategories(token),
     apiGetUsers(token),
   ]);
 
   if (!lastSyncAt) {
     // First sync: the API returns the complete visible dataset.
     await localStore.reconcileInventory(
-      { boats: authoritativeBoats, users: authoritativeUsers, categories: sync.categories ?? [], parts: sync.parts ?? [] },
+      { boats: authoritativeBoats, users: authoritativeUsers, categories: authoritativeCategories, parts: sync.parts ?? [] },
       protectedIds,
     );
   } else {
     // Incremental sync: /api/sync returns only changed rows. Merge those
     // changes with the local cache before calling the existing reconciliation
     // logic, otherwise unchanged local rows would be mistaken for deletions.
-    const [currentCategories, currentParts] = await Promise.all([
-      localStore.getCategories(),
-      localStore.searchParts({}),
-    ]);
+    const currentParts = await localStore.searchParts({});
 
     const boats = authoritativeBoats;
-    const categories = mergeById(currentCategories, sync.categories ?? []);
+    const categories = authoritativeCategories;
     const parts = mergeParts(currentParts, sync.parts ?? []);
 
     await localStore.reconcileInventory(
