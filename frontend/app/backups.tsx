@@ -338,7 +338,7 @@ const useStyles = makeStyles((colors) => ({
   deleteButton: { borderRadius: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.error, paddingHorizontal: 12, paddingVertical: 9 },
   deleteText: { color: colors.error, fontWeight: "700", fontSize: 12 },
   dangerButton: { minHeight: 48, borderRadius: 12, backgroundColor: colors.error, alignItems: "center", justifyContent: "center", paddingHorizontal: 16 },
-  dangerText: { color: colors.onError, fontWeight: "700" },
+  dangerText: { color: colors.onBrandPrimary, fontWeight: "700" },
   disabled: { opacity: 0.5 },
   empty: { padding: 20, alignItems: "center" },
   error: { color: colors.error, fontWeight: "600", lineHeight: 19 },
