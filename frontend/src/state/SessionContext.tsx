@@ -6,6 +6,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 
 import { queryClient } from "@/src/query-client";
 import { localStore } from "@/src/database/store";
+import { initializeServerConfig, setServerUrl } from "@/src/services/serverConfig";
 import { sessionRepository } from "@/src/repositories/sessionRepository";
 import { SessionRow, SessionUser } from "@/src/types";
 
@@ -23,6 +24,7 @@ interface SessionContextValue {
   enterReadonly: () => Promise<void>;
   exitReadonly: () => void;
   refreshSession: () => Promise<void>;
+  switchServer: (url: string) => Promise<void>;
 }
 
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
@@ -38,6 +40,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      await initializeServerConfig();
       await localStore.init();
       const restored = await sessionRepository.restore();
       const counts = await localStore.getCounts();
@@ -101,9 +104,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setMode("none");
   }, []);
 
+  const switchServer = useCallback(async (url: string) => {
+    await sessionRepository.logout();
+    await localStore.clearUserData();
+    await setServerUrl(url);
+    queryClient.clear();
+    setToken(null);
+    setUser(null);
+    setSession(null);
+    setCacheAvailable(false);
+    setMode("none");
+  }, []);
+
   const value = useMemo(
-    () => ({ loading, token, user, session, cacheAvailable, mode, signIn, signOut, enterReadonly, exitReadonly, refreshSession }),
-    [loading, token, user, session, cacheAvailable, mode, signIn, signOut, enterReadonly, exitReadonly, refreshSession],
+    () => ({ loading, token, user, session, cacheAvailable, mode, signIn, signOut, enterReadonly, exitReadonly, refreshSession, switchServer }),
+    [loading, token, user, session, cacheAvailable, mode, signIn, signOut, enterReadonly, exitReadonly, refreshSession, switchServer],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
