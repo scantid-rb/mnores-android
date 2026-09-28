@@ -16,8 +16,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0D1B2A"
       },
-      "package": "com.shipinventory.x6tence.app",
-      "usesCleartextTraffic": false
+      "package": "com.shipinventory.x6tence.app"
     },
     "web": {
       "bundler": "metro",
