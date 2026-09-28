@@ -178,3 +178,55 @@ export async function apiDeleteUser(token: string, id: number): Promise<void> {
     body: { action: "delete", id },
   });
 }
+
+
+interface CategoriesResponse {
+  ok: boolean;
+  categories: import("@/src/types").Category[];
+}
+
+interface CategoryResponse {
+  ok: boolean;
+  category: import("@/src/types").Category;
+}
+
+export async function apiGetCategories(token: string): Promise<import("@/src/types").Category[]> {
+  const r = await apiRequest<CategoriesResponse>("/api/categories", { token });
+  return r.categories;
+}
+
+export async function apiCreateCategory(
+  token: string,
+  name: string,
+): Promise<import("@/src/types").Category> {
+  const r = await apiRequest<CategoryResponse>("/api/categories", {
+    method: "POST",
+    token,
+    body: { action: "create", name },
+  });
+  return r.category;
+}
+
+export async function apiRenameCategory(
+  token: string,
+  id: number,
+  name: string,
+): Promise<import("@/src/types").Category> {
+  const r = await apiRequest<CategoryResponse>("/api/categories", {
+    method: "POST",
+    token,
+    body: { action: "rename", id, name },
+  });
+  return r.category;
+}
+
+export async function apiDeleteCategory(token: string, id: number): Promise<void> {
+  await apiRequest<{ ok: boolean; deleted?: boolean; moved_parts?: number }>(
+    "/api/categories",
+    {
+      method: "POST",
+      token,
+      body: { action: "delete", id },
+    },
+  );
+}
