@@ -21,7 +21,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
+        <QueryClientProvider client={queryClient}>
         <SafeAreaProvider>
           <KeyboardProvider>
             <SessionProvider>
