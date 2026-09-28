@@ -5,7 +5,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { API_VERSION } from "@/src/config";
-import { apiHandshake, HandshakeResponse } from "@/src/services/api/endpoints";
+import { apiGetSettings, apiHandshake, apiUpdateSettings, HandshakeResponse, ServerSettings } from "@/src/services/api/endpoints";
 import { getServerUrl, normalizeServerUrl } from "@/src/services/serverConfig";
 import { useSession } from "@/src/state/SessionContext";
 import { makeStyles, useTheme } from "@/src/theme";
@@ -23,6 +23,9 @@ export default function ServerSettingsScreen() {
   const [saving, setSaving] = useState(false);
   const [handshake, setHandshake] = useState<HandshakeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [serverSettings, setServerSettings] = useState<ServerSettings | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
   useEffect(() => {
     getServerUrl().then((value) => {
@@ -30,6 +33,39 @@ export default function ServerSettingsScreen() {
       setCurrentUrl(value);
     });
   }, []);
+
+  const canManageSettings = !!token && !!session && (session.role === "admin" || session.role === "inspector");
+
+  const loadSettings = useCallback(async () => {
+    if (!token || !canManageSettings) return;
+    setSettingsLoading(true);
+    setError(null);
+    try {
+      setServerSettings(await apiGetSettings(token));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo cargar la configuración del servidor.");
+    } finally {
+      setSettingsLoading(false);
+    }
+  }, [token, canManageSettings]);
+
+  useEffect(() => {
+    if (canManageSettings) loadSettings();
+  }, [canManageSettings, loadSettings]);
+
+  const saveSettings = async () => {
+    if (!token || !serverSettings) return;
+    setSettingsSaving(true);
+    setError(null);
+    try {
+      setServerSettings(await apiUpdateSettings(token, serverSettings));
+      Alert.alert("Configuración guardada", "Los cambios se han aplicado en el servidor.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar la configuración.");
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
 
   const checkServer = async () => {
     setError(null);
@@ -92,7 +128,7 @@ export default function ServerSettingsScreen() {
   };
 
   const compatible = handshake?.installed === true && handshake.api_version === API_VERSION;
-  const busy = checking || saving;
+  const busy = checking || saving || settingsLoading || settingsSaving;
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -155,6 +191,40 @@ export default function ServerSettingsScreen() {
           {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryText}>Guardar y cambiar servidor</Text>}
         </Pressable>
 
+        {canManageSettings && (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Configuración de la aplicación</Text>
+            {settingsLoading && !serverSettings ? <ActivityIndicator /> : serverSettings && (
+              <>
+                <Text style={styles.label}>Nombre de la aplicación</Text>
+                <TextInput style={styles.input} value={serverSettings.app_name}
+                  onChangeText={(value) => setServerSettings({ ...serverSettings, app_name: value })} maxLength={80} />
+                <Text style={styles.label}>Título / marca visible</Text>
+                <TextInput style={styles.input} value={serverSettings.app_title}
+                  onChangeText={(value) => setServerSettings({ ...serverSettings, app_title: value })} maxLength={80} />
+                <Text style={styles.label}>Empresa u organización</Text>
+                <TextInput style={styles.input} value={serverSettings.company_name}
+                  onChangeText={(value) => setServerSettings({ ...serverSettings, company_name: value })} maxLength={120} />
+                <Text style={styles.label}>Intervalo backup automático (días)</Text>
+                <TextInput style={styles.input} value={String(serverSettings.backup_interval_days)}
+                  onChangeText={(value) => setServerSettings({ ...serverSettings, backup_interval_days: Number(value.replace(/[^0-9]/g, "")) || 0 })} keyboardType="number-pad" />
+                <Text style={styles.label}>Retención backups de seguridad (días)</Text>
+                <TextInput style={styles.input} value={String(serverSettings.backup_retention_days)}
+                  onChangeText={(value) => setServerSettings({ ...serverSettings, backup_retention_days: Number(value.replace(/[^0-9]/g, "")) || 0 })} keyboardType="number-pad" />
+                <Text style={styles.label}>Conservación auditoría (días)</Text>
+                <TextInput style={styles.input} value={String(serverSettings.audit_retention_days)}
+                  onChangeText={(value) => setServerSettings({ ...serverSettings, audit_retention_days: Number(value.replace(/[^0-9]/g, "")) || 0 })} keyboardType="number-pad" />
+                <Text style={styles.label}>Umbral aviso espacio libre (%)</Text>
+                <TextInput style={styles.input} value={String(serverSettings.disk_warning_percent)}
+                  onChangeText={(value) => setServerSettings({ ...serverSettings, disk_warning_percent: Number(value.replace(/[^0-9]/g, "")) || 0 })} keyboardType="number-pad" />
+                <Pressable style={[styles.primaryButton, settingsSaving && styles.disabled]} onPress={saveSettings} disabled={busy}>
+                  {settingsSaving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryText}>Guardar configuración</Text>}
+                </Pressable>
+              </>
+            )}
+          </View>
+        )}
+
         {token && session && (
           <Text style={styles.warning}>
             Estás configurando el servidor desde una sesión activa. El cambio cerrará esta sesión y borrará los datos locales antes de entrar al nuevo servidor.
@@ -182,6 +252,7 @@ const useStyles = makeStyles((colors) => ({
   title: { flex: 1, textAlign: "center", fontSize: 20, fontWeight: "800", color: colors.onSurface },
   content: { padding: 20, gap: 16 },
   card: { backgroundColor: colors.surfaceSecondary, borderRadius: 16, padding: 20, gap: 10, borderWidth: 1, borderColor: colors.border },
+  sectionTitle: { fontSize: 17, fontWeight: "800", color: colors.onSurface, marginBottom: 4 },
   label: { fontSize: 14, fontWeight: "700", color: colors.onSurface },
   input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14, fontSize: 16, color: colors.onSurface },
   help: { fontSize: 13, lineHeight: 19, color: colors.muted },
