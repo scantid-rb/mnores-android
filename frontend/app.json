@@ -9,14 +9,14 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.shipinventory.x6tente.app"
+      "bundleIdentifier": "com.shipinventory.x6tence.app"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0D1B2A"
       },
-      "package": "com.shipinventory.x6tente.app",
+      "package": "com.shipinventory.x6tence.app",
       "usesCleartextTraffic": false
     },
     "web": {
