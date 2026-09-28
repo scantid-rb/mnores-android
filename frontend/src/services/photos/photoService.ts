@@ -103,7 +103,12 @@ export async function pickPartPhoto(source: "camera" | "library"): Promise<strin
       });
 
   if (result.canceled || !result.assets[0]?.uri) return null;
-  return processPhoto(result.assets[0].uri);
+  const processed = await processPhoto(result.assets[0].uri);
+  try {
+    return await persistPhoto(processed);
+  } finally {
+    await removeFile(processed);
+  }
 }
 
 export async function persistPhoto(sourceUri: string): Promise<string> {
