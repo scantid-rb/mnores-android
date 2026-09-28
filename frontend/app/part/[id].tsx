@@ -4,6 +4,8 @@
 
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useQueryClient } from "@tanstack/react-query";
@@ -47,6 +49,27 @@ export default function PartDetailScreen() {
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
+  const photoScale = useSharedValue(1);
+  const savedPhotoScale = useSharedValue(1);
+
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate((event) => {
+      const nextScale = savedPhotoScale.value * event.scale;
+      photoScale.value = Math.min(4, Math.max(1, nextScale));
+    })
+    .onEnd(() => {
+      savedPhotoScale.value = photoScale.value;
+    });
+
+  const photoZoomStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: photoScale.value }],
+  }));
+
+  const resetPhotoZoom = () => {
+    photoScale.value = withTiming(1);
+    savedPhotoScale.value = 1;
+    setPhotoViewerOpen(false);
+  };
 
   const categoryName =
     part?.category_id != null ? categories.find((c) => c.id === part.category_id)?.name ?? "—" : "—";
@@ -145,7 +168,7 @@ export default function PartDetailScreen() {
             <View style={styles.card}>
               {part.local_photo_path || part.photo_path ? (
                 <Pressable
-                  onPress={() => setPhotoViewerOpen(true)}
+                  onPress={() => { photoScale.value = 1; savedPhotoScale.value = 1; setPhotoViewerOpen(true); }}
                   style={styles.photoPressable}
                   accessibilityRole="button"
                   accessibilityLabel="Ampliar foto"
@@ -184,12 +207,12 @@ export default function PartDetailScreen() {
                 transparent
                 animationType="fade"
                 statusBarTranslucent
-                onRequestClose={() => setPhotoViewerOpen(false)}
+                onRequestClose={resetPhotoZoom}
               >
                 <View style={styles.photoViewer}>
                   <Pressable
                     style={styles.photoViewerClose}
-                    onPress={() => setPhotoViewerOpen(false)}
+                    onPress={resetPhotoZoom}
                     hitSlop={12}
                     accessibilityRole="button"
                     accessibilityLabel="Cerrar foto ampliada"
@@ -205,7 +228,7 @@ export default function PartDetailScreen() {
                           ? { uri: remotePartPhotoUrl(part.server_id), headers: { Authorization: `Bearer ${token}` } }
                           : undefined
                     }
-                    style={styles.photoViewerImage}
+                    style={[styles.photoViewerImage, photoZoomStyle]}
                     contentFit="contain"
                   />
                 </View>
