@@ -3,6 +3,7 @@
 
 import { apiRequest, apiRequestAtBaseUrl } from "@/src/services/api/client";
 import * as FileSystem from "expo-file-system/legacy";
+import { File, UploadType } from "expo-file-system";
 import { APP_VERSION, API_VERSION } from "@/src/config";
 import { getServerUrl, normalizeServerUrl } from "@/src/services/serverConfig";
 import { PushChange, PushResponse, SessionUser, SyncResponse } from "@/src/types";
@@ -252,12 +253,12 @@ export async function apiDownloadBackup(token: string, name: string, targetUri: 
 }
 
 export async function apiRestoreBackupUpload(token: string, fileUri: string, fileName: string): Promise<{ security_backup: string | null; session_invalidated: boolean }> {
-  const result = await FileSystem.uploadAsync(
+  const file = new File(fileUri);
+  const result = await file.upload(
     `${await getServerUrl()}/api/backups/restore-upload`,
-    fileUri,
     {
       httpMethod: "POST",
-      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      uploadType: UploadType.MULTIPART,
       fieldName: "backup",
       mimeType: "application/zip",
       headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
