@@ -221,8 +221,8 @@ export default function PartDetailScreen() {
                     <Text style={styles.photoViewerCloseText}>×</Text>
                   </Pressable>
                   <GestureDetector gesture={pinchGesture}>
-                    <Animated.View style={styles.photoViewerGestureArea}>
-                      <Animated.Image
+                    <Animated.View style={[styles.photoViewerGestureArea, photoZoomStyle]}>
+                      <Image
                         source={
                           part.local_photo_path
                             ? { uri: part.local_photo_path }
@@ -230,7 +230,7 @@ export default function PartDetailScreen() {
                               ? { uri: remotePartPhotoUrl(part.server_id), headers: { Authorization: `Bearer ${token}` } }
                               : undefined
                         }
-                        style={[styles.photoViewerImage, photoZoomStyle]}
+                        style={styles.photoViewerImage}
                         contentFit="contain"
                       />
                     </Animated.View>
