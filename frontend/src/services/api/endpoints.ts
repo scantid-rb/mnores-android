@@ -2,6 +2,7 @@
 // server selected in serverConfig.ts.
 
 import { apiRequest, apiRequestAtBaseUrl } from "@/src/services/api/client";
+import * as FileSystem from "expo-file-system/legacy";
 import { APP_VERSION, API_VERSION } from "@/src/config";
 import { normalizeServerUrl } from "@/src/services/serverConfig";
 import { PushChange, PushResponse, SessionUser, SyncResponse } from "@/src/types";
@@ -178,4 +179,85 @@ export async function apiGetAudit(token: string, params: { page?: number; operat
   if (params.actor_username) query.set("actor_username", params.actor_username);
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return apiRequest<import("@/src/types").AuditResponse>(`/api/audit${suffix}`, { token });
+}
+
+export interface ServerBackup {
+  name: string;
+  type: "manual" | "auto" | "security" | "app" | "otros";
+  label: string;
+  size: number;
+  mtime: number;
+}
+
+export interface ServerBackupsResponse {
+  ok: boolean;
+  items: ServerBackup[];
+  interval_days: number;
+  last_run: number | null;
+  last_failure: string | null;
+}
+
+export async function apiGetBackups(token: string): Promise<ServerBackupsResponse> {
+  return apiRequest<ServerBackupsResponse>("/api/backups", { token });
+}
+
+export async function apiCreateBackup(token: string, type: "data" | "app"): Promise<{ name: string }> {
+  const action = type === "app" ? "create_app" : "create_data";
+  return apiRequest<{ ok: boolean; name: string }>("/api/backups", {
+    method: "POST",
+    token,
+    body: { action },
+  });
+}
+
+export async function apiDeleteBackup(token: string, name: string): Promise<void> {
+  await apiRequest("/api/backups", {
+    method: "POST",
+    token,
+    body: { action: "delete", name },
+  });
+}
+
+export async function apiRestoreBackup(token: string, name: string): Promise<{ security_backup: string | null; session_invalidated: boolean }> {
+  return apiRequest("/api/backups", {
+    method: "POST",
+    token,
+    body: { action: "restore", name },
+  });
+}
+
+export async function apiDownloadBackup(token: string, name: string, targetUri: string): Promise<string> {
+  const result = await FileSystem.downloadAsync(
+    `${await getServerUrl()}/api/backups/${encodeURIComponent(name)}/download`,
+    targetUri,
+    {
+      headers: { Accept: "application/zip", Authorization: `Bearer ${token}` },
+    },
+  );
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(`No se pudo descargar el backup (HTTP ${result.status}).`);
+  }
+  return result.uri;
+}
+
+export async function apiRestoreBackupUpload(token: string, fileUri: string, fileName: string): Promise<{ security_backup: string | null; session_invalidated: boolean }> {
+  const result = await FileSystem.uploadAsync(
+    `${await getServerUrl()}/api/backups/restore-upload`,
+    fileUri,
+    {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "backup",
+      mimeType: "application/zip",
+      headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+      parameters: { filename: fileName },
+    },
+  );
+  const text = result.body ?? "";
+  let json: { ok?: boolean; error?: string; security_backup?: string | null; session_invalidated?: boolean } = {};
+  try { json = text ? JSON.parse(text) : {}; } catch { throw new Error("Respuesta de restauración no válida."); }
+  if (result.status < 200 || result.status >= 300 || json.ok === false) {
+    throw new Error(json.error || `Error HTTP ${result.status}`);
+  }
+  return { security_backup: json.security_backup ?? null, session_invalidated: json.session_invalidated === true };
 }
