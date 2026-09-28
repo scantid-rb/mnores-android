@@ -142,6 +142,7 @@ export async function uploadPartPhoto(token: string, partId: number, localPath: 
           Accept: "application/json",
           Authorization: `Bearer ${token}`,
         },
+        signal: controller.signal,
       },
     );
   } catch (e: unknown) {
