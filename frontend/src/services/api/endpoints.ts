@@ -230,3 +230,22 @@ export async function apiDeleteCategory(token: string, id: number): Promise<void
     },
   );
 }
+
+
+export async function apiGetAudit(
+  token: string,
+  params: {
+    page?: number;
+    operation?: string;
+    object_type?: string;
+    actor_username?: string;
+  } = {},
+): Promise<import("@/src/types").AuditResponse> {
+  const query = new URLSearchParams();
+  if (params.page && params.page > 1) query.set("page", String(params.page));
+  if (params.operation) query.set("operation", params.operation);
+  if (params.object_type) query.set("object_type", params.object_type);
+  if (params.actor_username) query.set("actor_username", params.actor_username);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return apiRequest<import("@/src/types").AuditResponse>(`/api/audit${suffix}`, { token });
+}
