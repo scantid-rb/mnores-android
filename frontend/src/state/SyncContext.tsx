@@ -102,8 +102,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       setReceivedActiveParts(summary.receivedActiveParts);
       setReceivedDeletedParts(summary.receivedDeletedParts);
       setCachedParts(summary.cachedParts);
-      setProtectedIds(summary.protectedIds);
-      setMissingActiveIds(summary.missingActiveIds);
+      setProtectedIds(summary.protectedIds ?? []);
+      setMissingActiveIds(summary.missingActiveIds ?? []);
       if (summary.diagnostics) {
         setDiagnostics(summary.diagnostics);
       } else if (summary.serverError || summary.failed > 0) {
