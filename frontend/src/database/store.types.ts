@@ -6,6 +6,7 @@
 import {
   Boat,
   Category,
+  User,
   CreatePartInput,
   EditablePartFields,
   LocalPart,
@@ -30,11 +31,12 @@ export interface LocalStore {
   // Reconcile server data into the cache. Parts whose server id is in
   // protectedServerIds are NOT overwritten (they still have pending changes).
   reconcileInventory(
-    data: { boats: Boat[]; categories: Category[]; parts: Part[] },
+    data: { boats: Boat[]; categories: Category[]; parts: Part[]; users?: User[] },
     protectedServerIds: number[],
   ): Promise<void>;
 
   getBoats(): Promise<Boat[]>;
+  getUsers(): Promise<User[]>;
   getCategories(): Promise<Category[]>;
   searchParts(opts: { query?: string; categoryId?: number | null }): Promise<LocalPart[]>;
   getPart(rowUid: string): Promise<LocalPart | null>;
