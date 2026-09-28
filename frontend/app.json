@@ -14,7 +14,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#0D1B2A"
       },
       "package": "com.emergent.mnoresandroidarch.c58xm2",
       "usesCleartextTraffic": true
