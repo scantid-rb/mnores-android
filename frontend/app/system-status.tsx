@@ -55,7 +55,12 @@ export default function SystemStatusScreen() {
     }
   }, [token, user]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void load();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [load]);
 
   const allowed = !!user && ["admin", "inspector"].includes(user.role);
 
