@@ -63,7 +63,7 @@ export default function LoginScreen() {
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <KeyboardAwareScrollView bottomOffset={24} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <Text style={styles.brand}>MNores Inventory</Text>
+          <Text style={styles.brand}>ShipInventory</Text>
           <Text style={styles.subtitle}>Inventario de repuestos a bordo</Text>
           <View style={styles.badgeRow}><StatusBadge online={online} /></View>
         </View>
