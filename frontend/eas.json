@@ -4,6 +4,13 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "preview-arm64": {
+      "distribution": "internal",
+      "credentialsSource": "remote",
+      "android": {
+        "buildType": "apk"
+      }
     }
   }
 }
