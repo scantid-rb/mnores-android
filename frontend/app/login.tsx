@@ -109,7 +109,8 @@ export default function LoginScreen() {
 const useStyles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.surface },
   content: { flexGrow: 1, justifyContent: "center", padding: 24, gap: 20 },
-  header: { alignItems: "center", gap: 6 },\n  appImage: { width: 120, height: 120, marginBottom: 4 },
+  header: { alignItems: "center", gap: 6 },
+  appImage: { width: 120, height: 120, marginBottom: 4 },
   brand: { fontSize: 28, fontWeight: "800", color: colors.brandPrimary },
   subtitle: { fontSize: 14, color: colors.muted },
   badgeRow: { marginTop: 8 },
