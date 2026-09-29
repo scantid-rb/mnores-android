@@ -51,9 +51,9 @@ const config: ExpoConfig = {
       "expo-image-picker",
       {
         cameraPermission:
-          "MNores necesita la cámara para fotografiar repuestos.",
+          "ShipInventory necesita la cámara para fotografiar repuestos.",
         photosPermission:
-          "MNores necesita acceso a tus fotos para adjuntar imágenes a los repuestos.",
+          "ShipInventory necesita acceso a tus fotos para adjuntar imágenes a los repuestos.",
         microphonePermission: false,
       },
     ],
