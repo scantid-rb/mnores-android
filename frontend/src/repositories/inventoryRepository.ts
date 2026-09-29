@@ -7,14 +7,18 @@ import {
   CreatePartInput,
   EditablePartFields,
   LocalPart,
+  User,
 } from "@/src/types";
 
 export const inventoryRepository = {
-  searchParts(query: string, categoryId: number | null): Promise<LocalPart[]> {
-    return localStore.searchParts({ query, categoryId });
+  searchParts(query: string, categoryId: number | null, boatId: number | null = null): Promise<LocalPart[]> {
+    return localStore.searchParts({ query, categoryId, boatId });
   },
   getCategories(): Promise<Category[]> {
     return localStore.getCategories();
+  },
+  getUsers(): Promise<User[]> {
+    return localStore.getUsers();
   },
   getBoats(): Promise<Boat[]> {
     return localStore.getBoats();

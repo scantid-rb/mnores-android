@@ -18,7 +18,7 @@ export default function SyncScreen() {
 
   const { online } = useConnectivity();
   const { session } = useSession();
-  const { status, pendingCount, lastError, conflictNotice, diagnostics, syncNow, clearConflictNotice } = useSync();
+  const { status, pendingCount, lastError, conflictNotice, diagnostics, receivedParts, receivedActiveParts, receivedDeletedParts, cachedParts, protectedIds, missingActiveIds, syncNow, clearConflictNotice } = useSync();
   const { data: counts } = useCounts();
 
   const syncing = status === "syncing";
@@ -46,6 +46,12 @@ export default function SyncScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Cache local</Text>
           <Row label="Repuestos" value={String(counts?.parts ?? 0)} />
+          <Row label="Servidor (última sync)" value={String(receivedParts)} />
+          <Row label="Servidor activos" value={String(receivedActiveParts)} />
+          <Row label="Servidor eliminados" value={String(receivedDeletedParts)} />
+          <Row label="Cache tras sync" value={String(cachedParts)} />
+          <Row label="IDs protegidos" value={protectedIds.length ? protectedIds.join(", ") : "ninguno"} />
+          <Row label="Activos no guardados" value={missingActiveIds.length ? missingActiveIds.join(", ") : "ninguno"} />
           <Row label="Categorías" value={String(counts?.categories ?? 0)} />
           <Row label="Barcos" value={String(counts?.boats ?? 0)} />
         </View>

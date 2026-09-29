@@ -25,8 +25,10 @@ export default function ProfileScreen() {
   const { data: boats = [] } = useBoats();
 
   const boatName = useMemo(() => {
-    const b = boats.find((x) => x.id === user?.boat_id);
-    return b?.name ?? (user ? `ID ${user.boat_id}` : "—");
+    if (!user) return "—";
+    if (user.boat_id == null) return "Sin asignar";
+    const b = boats.find((x) => x.id === user.boat_id);
+    return b?.name ?? `ID ${user.boat_id}`;
   }, [boats, user]);
 
   return (

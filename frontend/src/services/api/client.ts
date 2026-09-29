@@ -1,16 +1,15 @@
-// Centralized API client. Every HTTP call to the MNores PHP API goes through
-// here. It injects the Bearer token, applies a bounded timeout, parses JSON
-// safely and classifies errors precisely so the caller can distinguish a real
-// connectivity problem from an HTTP/parse/API error. It never logs tokens.
+// Centralized API client. All HTTP calls use the server URL selected at
+// runtime. The client never embeds an endpoint URL in individual services.
 
-import { API_BASE_URL, REQUEST_TIMEOUT_MS } from "@/src/config";
+import { REQUEST_TIMEOUT_MS } from "@/src/config";
+import { getServerUrl } from "@/src/services/serverConfig";
 
 export type ApiErrorKind = "network" | "timeout" | "http" | "parse" | "api";
 
 export class ApiError extends Error {
-  status: number; // HTTP status (0 when the request never completed)
+  status: number;
   kind: ApiErrorKind;
-  bodySnippet: string | null; // truncated response body (never a token)
+  bodySnippet: string | null;
   constructor(
     message: string,
     status: number,
@@ -37,16 +36,16 @@ function snippet(text: string): string {
   return t.length > 300 ? `${t.slice(0, 300)}…` : t;
 }
 
-export async function apiRequest<T = unknown>(
+function normalizeRequestBaseUrl(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+async function requestAtBaseUrl<T = unknown>(
+  baseUrl: string,
   path: string,
   opts: RequestOptions = {},
 ): Promise<T> {
-  if (!API_BASE_URL) {
-    throw new ApiError("API base URL no configurada (EXPO_PUBLIC_API_BASE_URL)", 0, "network");
-  }
-
   const { method = "GET", token, body, timeoutMs = REQUEST_TIMEOUT_MS } = opts;
-
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -56,7 +55,7 @@ export async function apiRequest<T = unknown>(
 
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}${path}`, {
+    res = await fetch(`${normalizeRequestBaseUrl(baseUrl)}${path}`, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
@@ -83,7 +82,6 @@ export async function apiRequest<T = unknown>(
     }
   }
 
-  // HTTP-level failure (e.g. 500). The body may be empty or HTML.
   if (!res.ok) {
     const asObj = (json ?? {}) as { error?: string };
     throw new ApiError(
@@ -94,16 +92,29 @@ export async function apiRequest<T = unknown>(
     );
   }
 
-  // 2xx but body was not valid JSON.
   if (text && !parseOk) {
     throw new ApiError("Respuesta del servidor no válida", res.status, "parse", snippet(text));
   }
 
-  // Application-level rejection.
   const asObj = (json ?? {}) as { ok?: boolean; error?: string };
   if (asObj.ok === false) {
     throw new ApiError(asObj.error || "Operación rechazada", res.status, "api", text ? snippet(text) : null);
   }
 
   return json as T;
+}
+
+export async function apiRequest<T = unknown>(
+  path: string,
+  opts: RequestOptions = {},
+): Promise<T> {
+  return requestAtBaseUrl(await getServerUrl(), path, opts);
+}
+
+export async function apiRequestAtBaseUrl<T = unknown>(
+  baseUrl: string,
+  path: string,
+  opts: RequestOptions = {},
+): Promise<T> {
+  return requestAtBaseUrl(baseUrl, path, opts);
 }

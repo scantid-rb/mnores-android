@@ -1,6 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { LogBox } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -18,19 +19,21 @@ export default function RootLayout() {
   // One app level ErrorBoundary; a render crash shows a reload screen
   // instead of a blank app.
   return (
-    <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ErrorBoundary>
+        <QueryClientProvider client={queryClient}>
         <SafeAreaProvider>
           <KeyboardProvider>
             <SessionProvider>
               <SyncProvider>
-                <StatusBar style="dark" />
+                <StatusBar style="auto" />
                 <Stack screenOptions={{ headerShown: false }} />
               </SyncProvider>
             </SessionProvider>
           </KeyboardProvider>
         </SafeAreaProvider>
-      </QueryClientProvider>
-    </ErrorBoundary>
+        </QueryClientProvider>
+      </ErrorBoundary>
+    </GestureHandlerRootView>
   );
 }

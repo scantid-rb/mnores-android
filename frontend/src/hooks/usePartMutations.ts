@@ -7,6 +7,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { inventoryRepository } from "@/src/repositories/inventoryRepository";
 import { useSync } from "@/src/state/SyncContext";
+import { useSession } from "@/src/state/SessionContext";
 import { CreatePartInput, EditablePartFields } from "@/src/types";
 import { newLocalId } from "@/src/utils/id";
 
@@ -23,27 +24,37 @@ function useAfterMutation() {
 }
 
 export function useCreatePart() {
+  const { mode } = useSession();
   const after = useAfterMutation();
   return useMutation({
-    mutationFn: (input: Omit<CreatePartInput, "local_id">) =>
-      inventoryRepository.createPart({ ...input, local_id: newLocalId() }),
+    mutationFn: (input: Omit<CreatePartInput, "local_id">) => {
+      if (mode === "readonly") throw new Error("El inventario está en modo solo lectura.");
+      return inventoryRepository.createPart({ ...input, local_id: newLocalId() });
+    },
     onSuccess: (part) => after(part.row_uid),
   });
 }
 
 export function useUpdatePart() {
+  const { mode } = useSession();
   const after = useAfterMutation();
   return useMutation({
-    mutationFn: ({ rowUid, fields }: { rowUid: string; fields: EditablePartFields }) =>
-      inventoryRepository.updatePart(rowUid, fields),
+    mutationFn: ({ rowUid, fields }: { rowUid: string; fields: EditablePartFields }) => {
+      if (mode === "readonly") throw new Error("El inventario está en modo solo lectura.");
+      return inventoryRepository.updatePart(rowUid, fields);
+    },
     onSuccess: (_r, vars) => after(vars.rowUid),
   });
 }
 
 export function useDeletePart() {
+  const { mode } = useSession();
   const after = useAfterMutation();
   return useMutation({
-    mutationFn: (rowUid: string) => inventoryRepository.deletePart(rowUid),
+    mutationFn: (rowUid: string) => {
+      if (mode === "readonly") throw new Error("El inventario está en modo solo lectura.");
+      return inventoryRepository.deletePart(rowUid);
+    },
     onSuccess: (_r, rowUid) => after(rowUid),
   });
 }

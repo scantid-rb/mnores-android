@@ -6,7 +6,7 @@
 // component). Declaring it inside caused React to see a new component type on
 // every keystroke, remounting the TextInputs and dropping keyboard focus.
 
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
@@ -25,10 +25,10 @@ export default function PartEditScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const { mode, rowUid } = useLocalSearchParams<{ mode: string; rowUid?: string }>();
-  const isEdit = mode === "edit" && !!rowUid;
+  const { mode: routeMode, rowUid } = useLocalSearchParams<{ mode: string; rowUid?: string }>();
+  const isEdit = routeMode === "edit" && !!rowUid;
 
-  const { user } = useSession();
+  const { user, token, session, mode: accessMode } = useSession();
   const fullEdit = canEditFields(user?.role);
 
   const { data: categories = [] } = useCategories();
@@ -40,6 +40,7 @@ export default function PartEditScreen() {
   const [name, setName] = useState("");
   const [reference, setReference] = useState("");
   const [categoryId, setCategoryId] = useState<number | null>(null);
+  const [boatId, setBoatId] = useState<number | null>(null);
   const [location, setLocation] = useState("");
   const [quantity, setQuantity] = useState("0");
   const [notes, setNotes] = useState("");
@@ -48,9 +49,13 @@ export default function PartEditScreen() {
 
   useEffect(() => {
     if (isEdit && existing && !loaded) {
+      // Hydrate local form state from asynchronously loaded SQLite data.
+      // This is an intentional effect-side state update, not a render loop.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setName(existing.name ?? "");
       setReference(existing.reference ?? "");
       setCategoryId(existing.category_id ?? null);
+      setBoatId(existing.boat_id ?? null);
       setLocation(existing.location ?? "");
       setQuantity(String(existing.quantity ?? 0));
       setNotes(existing.notes ?? "");
@@ -59,11 +64,14 @@ export default function PartEditScreen() {
   }, [isEdit, existing, loaded]);
 
   const boatName = useMemo(() => {
-    const bId = isEdit ? existing?.boat_id : user?.boat_id;
+    const bId = isEdit ? existing?.boat_id : (boatId ?? user?.boat_id);
     return boats.find((b) => b.id === bId)?.name ?? (bId != null ? `ID ${bId}` : "—");
-  }, [boats, existing, user, isEdit]);
+  }, [boats, existing, user, isEdit, boatId]);
 
   const parsedQty = Math.max(0, parseInt(quantity || "0", 10) || 0);
+
+  if (accessMode === "readonly") return <Redirect href="/inventory" />;
+  if (!token || !session) return <Redirect href="/login" />;
 
   const onSave = () => {
     setError(null);
@@ -93,13 +101,13 @@ export default function PartEditScreen() {
         : { quantity: parsedQty };
       updatePart.mutate({ rowUid: String(rowUid), fields }, { onSuccess: () => router.back() });
     } else {
-      if (user?.boat_id == null) {
-        setError("No hay barco asignado a la sesión.");
+      if (boatId == null && user?.boat_id == null) {
+        setError("Selecciona un barco.");
         return;
       }
       createPart.mutate(
         {
-          boat_id: user.boat_id,
+          boat_id: boatId ?? user.boat_id,
           name: name.trim(),
           reference: reference.trim() || null,
           category_id: categoryId,
@@ -126,7 +134,24 @@ export default function PartEditScreen() {
 
       <KeyboardAwareScrollView bottomOffset={24} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Field label="Barco">
-          <Text style={styles.readonly}>{boatName}</Text>
+          {fullEdit && !isEdit ? (
+            <View style={styles.chipsRow}>
+              {boats.filter((b) => b.is_active).map((b) => {
+                const active = (boatId ?? user?.boat_id) === b.id;
+                return (
+                  <Text
+                    key={b.id}
+                    onPress={() => setBoatId(active ? null : b.id)}
+                    style={[styles.chip, active ? styles.chipActive : styles.chipInactive]}
+                  >
+                    {b.name}
+                  </Text>
+                );
+              })}
+            </View>
+          ) : (
+            <Text style={styles.readonly}>{boatName}</Text>
+          )}
         </Field>
 
         {fullEdit && (

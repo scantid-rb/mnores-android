@@ -6,10 +6,12 @@
 import {
   Boat,
   Category,
+  User,
   CreatePartInput,
   EditablePartFields,
   LocalPart,
   Part,
+  PendingPhoto,
   PendingChange,
   SessionRow,
   SessionUser,
@@ -22,16 +24,19 @@ export interface LocalStore {
   saveSession(user: SessionUser): Promise<void>;
   getSession(): Promise<SessionRow | null>;
   clearSession(): Promise<void>;
+  // Clear cached inventory and queued mutations when switching users.
+  clearUserData(): Promise<void>;
   setLastSyncAt(serverTime: string): Promise<void>;
 
   // Reconcile server data into the cache. Parts whose server id is in
   // protectedServerIds are NOT overwritten (they still have pending changes).
   reconcileInventory(
-    data: { boats: Boat[]; categories: Category[]; parts: Part[] },
+    data: { boats: Boat[]; categories: Category[]; parts: Part[]; users?: User[] },
     protectedServerIds: number[],
   ): Promise<void>;
 
   getBoats(): Promise<Boat[]>;
+  getUsers(): Promise<User[]>;
   getCategories(): Promise<Category[]>;
   searchParts(opts: { query?: string; categoryId?: number | null }): Promise<LocalPart[]>;
   getPart(rowUid: string): Promise<LocalPart | null>;
@@ -41,6 +46,11 @@ export interface LocalStore {
   createPartLocal(input: CreatePartInput): Promise<LocalPart>;
   updatePartLocal(rowUid: string, fields: EditablePartFields): Promise<LocalPart | null>;
   deletePartLocal(rowUid: string): Promise<void>;
+  setLocalPhoto(rowUid: string, localPath: string): Promise<void>;
+  getPendingPhotos(): Promise<PendingPhoto[]>;
+  applyPhotoServerId(rowUid: string, serverId: number): Promise<void>;
+  applyPhotoOk(rowUid: string, serverUpdatedAt: string): Promise<void>;
+  markPhotoRetry(queueId: string, lastError: string): Promise<void>;
 
   // Sync queue.
   getPendingChanges(): Promise<PendingChange[]>;

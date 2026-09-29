@@ -4,6 +4,7 @@
 // transaction so an operation can never be lost mid-write.
 
 import * as SQLite from "expo-sqlite";
+import * as FileSystem from "expo-file-system/legacy";
 
 import {
   Boat,
@@ -13,14 +14,16 @@ import {
   LocalPart,
   Part,
   PendingChange,
+  PendingPhoto,
   SessionRow,
   SessionUser,
+  User,
 } from "@/src/types";
 import { LocalStore } from "@/src/database/store.types";
 import { newQueueId } from "@/src/utils/id";
 
 const MAX_RETRIES = 5;
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 4;
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -31,6 +34,16 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+async function removeLocalFile(path: string | null | undefined): Promise<void> {
+  if (!path) return;
+  try {
+    const info = await FileSystem.getInfoAsync(path);
+    if (info.exists) await FileSystem.deleteAsync(path, { idempotent: true });
+  } catch {
+    // Local cleanup must never make the database operation fail.
+  }
 }
 
 class SqliteStore implements LocalStore {
@@ -44,8 +57,19 @@ class SqliteStore implements LocalStore {
         id INTEGER PRIMARY KEY,
         username TEXT NOT NULL,
         role TEXT NOT NULL,
-        boat_id INTEGER NOT NULL,
+        boat_id INTEGER,
         last_sync_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY,
+        username TEXT NOT NULL,
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        boat_id INTEGER,
+        is_active INTEGER NOT NULL,
+        is_primary_admin INTEGER NOT NULL DEFAULT 0
       );
 
       CREATE TABLE IF NOT EXISTS boats (
@@ -78,7 +102,7 @@ class SqliteStore implements LocalStore {
 
     // parts table: rebuilt at schema v2 to move the primary key to row_uid.
     const ver = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version;");
-    if ((ver?.user_version ?? 0) < SCHEMA_VERSION) {
+    if ((ver?.user_version ?? 0) < 2) {
       await db.execAsync(`
         DROP TABLE IF EXISTS parts;
         CREATE TABLE parts (
@@ -93,6 +117,7 @@ class SqliteStore implements LocalStore {
           quantity INTEGER,
           notes TEXT,
           photo_path TEXT,
+          local_photo_path TEXT,
           updated_at TEXT,
           deleted_at TEXT,
           pending_delete INTEGER DEFAULT 0,
@@ -103,10 +128,64 @@ class SqliteStore implements LocalStore {
         CREATE INDEX IF NOT EXISTS idx_parts_location ON parts(location);
         CREATE INDEX IF NOT EXISTS idx_parts_category ON parts(category_id);
         CREATE INDEX IF NOT EXISTS idx_parts_server ON parts(server_id);
+        CREATE TABLE IF NOT EXISTS photo_queue (
+          queue_id TEXT PRIMARY KEY,
+          row_uid TEXT NOT NULL,
+          server_id INTEGER,
+          local_path TEXT NOT NULL,
+          retry_count INTEGER DEFAULT 0,
+          last_error TEXT,
+          status TEXT DEFAULT 'pending',
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_photo_queue_row ON photo_queue(row_uid);
         PRAGMA user_version = ${SCHEMA_VERSION};
       `);
     }
 
+    if ((ver?.user_version ?? 0) < 3) {
+      const cols = await db.getAllAsync<{ name: string }>("PRAGMA table_info(parts);");
+      if (!cols.some((x) => x.name === "local_photo_path")) {
+        await db.runAsync("ALTER TABLE parts ADD COLUMN local_photo_path TEXT;");
+      }
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS photo_queue (
+          queue_id TEXT PRIMARY KEY,
+          row_uid TEXT NOT NULL,
+          server_id INTEGER,
+          local_path TEXT NOT NULL,
+          retry_count INTEGER DEFAULT 0,
+          last_error TEXT,
+          status TEXT DEFAULT 'pending',
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_photo_queue_row ON photo_queue(row_uid);
+        PRAGMA user_version = 3;
+      `);
+    }
+
+    // Schema v4: admin/inspector sessions may have no assigned boat.
+    // Only the session table is migrated. Parts schema/version is independent.
+    const sessionCols = await db.getAllAsync<{ name: string; notnull: number }>(
+      "PRAGMA table_info(session);",
+    );
+    const sessionBoat = sessionCols.find((col) => col.name === "boat_id");
+    if ((ver?.user_version ?? 0) < 4 || sessionBoat?.notnull === 1) {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS session_v4 (
+          id INTEGER PRIMARY KEY,
+          username TEXT NOT NULL,
+          role TEXT NOT NULL,
+          boat_id INTEGER,
+          last_sync_at TEXT
+        );
+        INSERT OR REPLACE INTO session_v4 (id, username, role, boat_id, last_sync_at)
+          SELECT id, username, role, boat_id, last_sync_at FROM session;
+        DROP TABLE session;
+        ALTER TABLE session_v4 RENAME TO session;
+        PRAGMA user_version = 4;
+      `);
+    }
     // Recover any operation left mid-flight by a previous crash/close.
     await db.runAsync("UPDATE pending_changes SET status = 'pending' WHERE status = 'syncing';");
   }
@@ -137,6 +216,22 @@ class SqliteStore implements LocalStore {
     await db.runAsync("DELETE FROM session;");
   }
 
+  async clearUserData(): Promise<void> {
+    // Switching identity/server invalidates the whole local dataset. Remove
+    // the complete private photo directory as well as all SQLite cache/queues.
+    await removeLocalFile(`${FileSystem.documentDirectory}photos/`);
+    const db = await getDb();
+    await db.withTransactionAsync(async () => {
+      await db.runAsync("DELETE FROM pending_changes;");
+      await db.runAsync("DELETE FROM photo_queue;");
+      await db.runAsync("DELETE FROM parts;");
+      await db.runAsync("DELETE FROM users;");
+      await db.runAsync("DELETE FROM boats;");
+      await db.runAsync("DELETE FROM categories;");
+      await db.runAsync("DELETE FROM session;");
+    });
+  }
+
   async setLastSyncAt(serverTime: string): Promise<void> {
     const db = await getDb();
     await db.runAsync("UPDATE session SET last_sync_at = ?;", [serverTime]);
@@ -149,11 +244,19 @@ class SqliteStore implements LocalStore {
   ): Promise<void> {
     const db = await getDb();
     const protectedSet = new Set(protectedServerIds);
-    const serverIds = new Set(data.parts.map((p) => p.id));
+    // Tombstones are authoritative deletions. Protected rows remain untouched
+    // until their pending operation is resolved.
+    const serverIds = new Set(data.parts.filter((p) => !p.deleted_at).map((p) => p.id));
 
     await db.withTransactionAsync(async () => {
-      // Boats & categories are server-authoritative; replace wholesale.
-      await db.execAsync("DELETE FROM boats; DELETE FROM categories;");
+      // Administrative catalogs are server-authoritative; replace wholesale.
+      await db.execAsync("DELETE FROM users; DELETE FROM boats; DELETE FROM categories;");
+      for (const u of data.users ?? []) {
+        await db.runAsync(
+          "INSERT INTO users (id, username, first_name, last_name, role, boat_id, is_active, is_primary_admin) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
+          [u.id, u.username, u.first_name, u.last_name, u.role, u.boat_id ?? null, u.is_active ?? 1, u.is_primary_admin ?? 0],
+        );
+      }
       for (const b of data.boats) {
         await db.runAsync(
           "INSERT INTO boats (id, name, registration, is_active, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?);",
@@ -168,25 +271,55 @@ class SqliteStore implements LocalStore {
       }
 
       // Parts: merge, protecting rows that still have pending changes.
+      // A server tombstone is a deletion signal, not a normal part row.
       for (const p of data.parts) {
         if (protectedSet.has(p.id)) continue;
-        const existing = await db.getFirstAsync<{ row_uid: string }>(
-          "SELECT row_uid FROM parts WHERE server_id = ?;",
-          [p.id],
+        if (p.deleted_at) {
+          // A tombstone removes every stale local duplicate for this server id.
+          const localRows = await db.getAllAsync<{ local_photo_path: string | null }>(
+            "SELECT local_photo_path FROM parts WHERE server_id = ?;",
+            [p.id],
+          );
+          await db.runAsync("DELETE FROM photo_queue WHERE server_id = ?;", [p.id]);
+          await db.runAsync("DELETE FROM parts WHERE server_id = ?;", [p.id]);
+          for (const row of localRows) await removeLocalFile(row.local_photo_path);
+          continue;
+        }
+        // Match by server_id first. If an older/local row already owns the
+        // canonical server row_uid (srv-<id>), reuse that row instead of
+        // attempting a second INSERT and violating the row_uid PRIMARY KEY.
+        const existingRows = await db.getAllAsync<{ row_uid: string; sync_state: string }>(
+          "SELECT row_uid, sync_state FROM parts WHERE server_id = ? OR row_uid = ?;",
+          [p.id, `srv-${p.id}`],
         );
-        if (existing) {
+        if (existingRows.length > 0) {
+          // There must be exactly one local row for each canonical server id.
+          // Prefer the canonical srv-<id> row; otherwise prefer a synced row.
+          const canonical =
+            existingRows.find((r) => r.row_uid === `srv-${p.id}`) ??
+            existingRows.find((r) => r.sync_state === "synced") ??
+            existingRows[0];
+
           await db.runAsync(
-            `UPDATE parts SET name=?, reference=?, category_id=?, location=?, quantity=?, notes=?, photo_path=?, updated_at=?, deleted_at=?, pending_delete=0, sync_state='synced' WHERE server_id=?;`,
+            `UPDATE parts SET server_id=?, local_id=NULL, boat_id=?, name=?, reference=?, category_id=?, location=?, quantity=?, notes=?, photo_path=?, updated_at=?, deleted_at=?, pending_delete=0, sync_state='synced' WHERE row_uid=?;`,
             [
-              p.name, p.reference ?? null, p.category_id ?? null, p.location ?? null,
-              p.quantity ?? 0, p.notes ?? null, p.photo_path ?? null, p.updated_at ?? null,
-              p.deleted_at ?? null, p.id,
+              p.id, p.boat_id, p.name, p.reference ?? null, p.category_id ?? null,
+              p.location ?? null, p.quantity ?? 0, p.notes ?? null, p.photo_path ?? null,
+              p.updated_at ?? null, p.deleted_at ?? null, canonical.row_uid,
             ],
           );
+
+          // Repair duplicates left by an older reconciliation.
+          const duplicateUids = existingRows
+            .map((r) => r.row_uid)
+            .filter((uid) => uid !== canonical.row_uid);
+          for (const uid of duplicateUids) {
+            await db.runAsync("DELETE FROM parts WHERE row_uid = ?;", [uid]);
+          }
         } else {
           await db.runAsync(
-            `INSERT INTO parts (row_uid, server_id, local_id, boat_id, name, reference, category_id, location, quantity, notes, photo_path, updated_at, deleted_at, pending_delete, sync_state)
-             VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'synced');`,
+            `INSERT INTO parts (row_uid, server_id, local_id, boat_id, name, reference, category_id, location, quantity, notes, photo_path, local_photo_path, updated_at, deleted_at, pending_delete, sync_state)
+             VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 0, 'synced');`,
             [
               `srv-${p.id}`, p.id, p.boat_id, p.name, p.reference ?? null, p.category_id ?? null,
               p.location ?? null, p.quantity ?? 0, p.notes ?? null, p.photo_path ?? null,
@@ -202,10 +335,22 @@ class SqliteStore implements LocalStore {
       );
       for (const row of localSynced) {
         if (!serverIds.has(row.server_id) && !protectedSet.has(row.server_id)) {
+          const localPhoto = await db.getFirstAsync<{ local_photo_path: string | null }>(
+            "SELECT local_photo_path FROM parts WHERE row_uid = ?;",
+            [row.row_uid],
+          );
           await db.runAsync("DELETE FROM parts WHERE row_uid = ?;", [row.row_uid]);
+          await removeLocalFile(localPhoto?.local_photo_path);
         }
       }
     });
+  }
+
+  async getUsers(): Promise<User[]> {
+    const db = await getDb();
+    return db.getAllAsync<User>(
+      "SELECT id, username, first_name, last_name, role, boat_id, is_active, is_primary_admin FROM users ORDER BY username COLLATE NOCASE;",
+    );
   }
 
   async getBoats(): Promise<Boat[]> {
@@ -218,13 +363,17 @@ class SqliteStore implements LocalStore {
     return db.getAllAsync<Category>("SELECT * FROM categories WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE;");
   }
 
-  async searchParts(opts: { query?: string; categoryId?: number | null }): Promise<LocalPart[]> {
+  async searchParts(opts: { query?: string; categoryId?: number | null; boatId?: number | null }): Promise<LocalPart[]> {
     const db = await getDb();
     const clauses: string[] = ["pending_delete = 0", "deleted_at IS NULL"];
     const params: (string | number)[] = [];
     if (opts.categoryId != null) {
       clauses.push("category_id = ?");
       params.push(opts.categoryId);
+    }
+    if (opts.boatId != null) {
+      clauses.push("boat_id = ?");
+      params.push(opts.boatId);
     }
     const q = opts.query?.trim();
     if (q) {
@@ -268,8 +417,8 @@ class SqliteStore implements LocalStore {
 
     await db.withTransactionAsync(async () => {
       await db.runAsync(
-        `INSERT INTO parts (row_uid, server_id, local_id, boat_id, name, reference, category_id, location, quantity, notes, photo_path, updated_at, deleted_at, pending_delete, sync_state)
-         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 0, 'pending');`,
+        `INSERT INTO parts (row_uid, server_id, local_id, boat_id, name, reference, category_id, location, quantity, notes, photo_path, local_photo_path, updated_at, deleted_at, pending_delete, sync_state)
+         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, 0, 'pending');`,
         [
           rowUid, input.local_id, input.boat_id, input.name, input.reference ?? null,
           input.category_id ?? null, input.location ?? null, input.quantity ?? 0, input.notes ?? null,
@@ -355,14 +504,18 @@ class SqliteStore implements LocalStore {
     const part = await this.getPart(rowUid);
     if (!part) return;
 
+    const localPhotoPath = part.local_photo_path;
+
     await db.withTransactionAsync(async () => {
       if (part.server_id == null) {
         // Never reached the server: drop the local create and its queue entry.
         await db.runAsync("DELETE FROM pending_changes WHERE row_uid = ? AND action = 'create';", [rowUid]);
+        await db.runAsync("DELETE FROM photo_queue WHERE row_uid = ?;", [rowUid]);
         await db.runAsync("DELETE FROM parts WHERE row_uid = ?;", [rowUid]);
       } else {
         // Pending updates are superseded by the delete.
         await db.runAsync("DELETE FROM pending_changes WHERE row_uid = ? AND action = 'update' AND status = 'pending';", [rowUid]);
+        await db.runAsync("DELETE FROM photo_queue WHERE row_uid = ?;", [rowUid]);
         await db.runAsync("UPDATE parts SET pending_delete = 1, sync_state = 'pending' WHERE row_uid = ?;", [rowUid]);
         await db.runAsync(
           `INSERT INTO pending_changes (queue_id, action, entity, entity_id, row_uid, client_local_id, payload, base_updated_at, created_at, retry_count, last_error, status)
@@ -371,6 +524,8 @@ class SqliteStore implements LocalStore {
         );
       }
     });
+
+    await removeLocalFile(localPhotoPath);
   }
 
   // -------------------------------------------------------------- queue
@@ -386,13 +541,16 @@ class SqliteStore implements LocalStore {
     const r = await db.getFirstAsync<{ n: number }>(
       "SELECT COUNT(*) AS n FROM pending_changes WHERE status IN ('pending','syncing');",
     );
-    return r?.n ?? 0;
+    const p = await db.getFirstAsync<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM photo_queue WHERE status IN ('pending','uploading');",
+    );
+    return (r?.n ?? 0) + (p?.n ?? 0);
   }
 
   async getProtectedServerIds(): Promise<number[]> {
     const db = await getDb();
     const rows = await db.getAllAsync<{ entity_id: number }>(
-      "SELECT DISTINCT entity_id FROM pending_changes WHERE entity_id IS NOT NULL;",
+      "SELECT DISTINCT entity_id FROM pending_changes WHERE entity_id IS NOT NULL AND status IN ('pending','syncing');",
     );
     return rows.map((r) => r.entity_id);
   }
@@ -418,6 +576,7 @@ class SqliteStore implements LocalStore {
         "UPDATE parts SET server_id = ?, updated_at = ?, sync_state = 'synced' WHERE row_uid = ?;",
         [serverId, updatedAt, rowUid],
       );
+      await db.runAsync("UPDATE photo_queue SET server_id = ? WHERE row_uid = ? AND server_id IS NULL;", [serverId, rowUid]);
       await db.runAsync("DELETE FROM pending_changes WHERE queue_id = ?;", [queueId]);
     });
   }
@@ -435,10 +594,64 @@ class SqliteStore implements LocalStore {
 
   async applyDeleteOk(queueId: string, serverId: number): Promise<void> {
     const db = await getDb();
+    let localPhotoPath: string | null = null;
     await db.withTransactionAsync(async () => {
+      const row = await db.getFirstAsync<{ row_uid: string; local_photo_path: string | null }>(
+        "SELECT row_uid, local_photo_path FROM parts WHERE server_id = ? LIMIT 1;",
+        [serverId],
+      );
+      localPhotoPath = row?.local_photo_path ?? null;
+      await db.runAsync("DELETE FROM photo_queue WHERE server_id = ? OR row_uid = ?;", [serverId, row?.row_uid ?? ""]);
       await db.runAsync("DELETE FROM parts WHERE server_id = ?;", [serverId]);
       await db.runAsync("DELETE FROM pending_changes WHERE queue_id = ?;", [queueId]);
     });
+    await removeLocalFile(localPhotoPath);
+  }
+
+  async setLocalPhoto(rowUid: string, localPath: string): Promise<void> {
+    const db = await getDb();
+    const part = await this.getPart(rowUid);
+    if (!part) throw new Error("Pieza no encontrada");
+    const previousLocalPath = part.local_photo_path;
+    await db.withTransactionAsync(async () => {
+      await db.runAsync("UPDATE parts SET local_photo_path = ? WHERE row_uid = ?;", [localPath, rowUid]);
+      await db.runAsync("DELETE FROM photo_queue WHERE row_uid = ?;", [rowUid]);
+      await db.runAsync(
+        "INSERT INTO photo_queue (queue_id,row_uid,server_id,local_path,retry_count,last_error,status,created_at) VALUES (?,?,?,?,0,NULL,'pending',?);",
+        [newQueueId(), rowUid, part.server_id, localPath, nowIso()],
+      );
+    });
+    if (previousLocalPath && previousLocalPath !== localPath) {
+      await removeLocalFile(previousLocalPath);
+    }
+  }
+
+  async getPendingPhotos(): Promise<PendingPhoto[]> {
+    const db = await getDb();
+    return db.getAllAsync<PendingPhoto>("SELECT * FROM photo_queue WHERE status IN ('pending','uploading') ORDER BY created_at ASC;");
+  }
+
+  async applyPhotoServerId(rowUid: string, serverId: number): Promise<void> {
+    const db = await getDb();
+    await db.runAsync("UPDATE photo_queue SET server_id = ? WHERE row_uid = ?;", [serverId, rowUid]);
+  }
+
+  async applyPhotoOk(rowUid: string, serverUpdatedAt: string): Promise<void> {
+    const db = await getDb();
+    await db.withTransactionAsync(async () => {
+      await db.runAsync("UPDATE parts SET photo_path = ?, updated_at = ? WHERE row_uid = ?;", ["server", serverUpdatedAt, rowUid]);
+      await db.runAsync("DELETE FROM photo_queue WHERE row_uid = ?;", [rowUid]);
+    });
+  }
+
+  async markPhotoRetry(queueId: string, lastError: string): Promise<void> {
+    const db = await getDb();
+    const row = await db.getFirstAsync<{ retry_count: number }>("SELECT retry_count FROM photo_queue WHERE queue_id = ?;", [queueId]);
+    const next = (row?.retry_count ?? 0) + 1;
+    await db.runAsync(
+      "UPDATE photo_queue SET retry_count = ?, last_error = ?, status = ? WHERE queue_id = ?;",
+      [next, lastError, next >= MAX_RETRIES ? "failed" : "pending", queueId],
+    );
   }
 
   async markConflict(rowUid: string): Promise<void> {

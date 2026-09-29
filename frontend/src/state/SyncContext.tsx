@@ -30,6 +30,12 @@ interface SyncContextValue {
   syncNow: () => Promise<void>;
   refreshPending: () => Promise<void>;
   clearConflictNotice: () => void;
+  receivedParts: number;
+  receivedActiveParts: number;
+  receivedDeletedParts: number;
+  cachedParts: number;
+  protectedIds: number[];
+  missingActiveIds: number[];
 }
 
 const SyncContext = createContext<SyncContextValue | undefined>(undefined);
@@ -38,6 +44,7 @@ function invalidateInventory() {
   queryClient.invalidateQueries({ queryKey: ["parts"] });
   queryClient.invalidateQueries({ queryKey: ["categories"] });
   queryClient.invalidateQueries({ queryKey: ["boats"] });
+  queryClient.invalidateQueries({ queryKey: ["users"] });
   queryClient.invalidateQueries({ queryKey: ["counts"] });
 }
 
@@ -51,7 +58,7 @@ function messageFor(s: SyncSummary): string | null {
 }
 
 export function SyncProvider({ children }: { children: React.ReactNode }) {
-  const { token, signOut } = useSession();
+  const { token, signOut, refreshSession } = useSession();
   const { online } = useConnectivity();
 
   const [status, setStatus] = useState<SyncStatus>("idle");
@@ -59,8 +66,15 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [lastError, setLastError] = useState<string | null>(null);
   const [conflictNotice, setConflictNotice] = useState(false);
   const [diagnostics, setDiagnostics] = useState<SyncDiagnostics | null>(null);
+  const [receivedParts, setReceivedParts] = useState(0);
+  const [receivedActiveParts, setReceivedActiveParts] = useState(0);
+  const [receivedDeletedParts, setReceivedDeletedParts] = useState(0);
+  const [cachedParts, setCachedParts] = useState(0);
+  const [protectedIds, setProtectedIds] = useState<number[]>([]);
+  const [missingActiveIds, setMissingActiveIds] = useState<number[]>([]);
 
   const running = useRef(false);
+  const rerunRequested = useRef(false);
   const prevOnline = useRef(online);
 
   const refreshPending = useCallback(async () => {
@@ -69,7 +83,12 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   const syncNow = useCallback(async () => {
     if (!token) return;
-    if (running.current) return; // guard against concurrent passes
+    if (running.current) {
+      // A mutation may finish while an automatic sync is still running.
+      // Do not silently discard the requested refresh; queue one extra pass.
+      rerunRequested.current = true;
+      return;
+    }
     if (!online) {
       await refreshPending();
       return;
@@ -77,13 +96,38 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     running.current = true;
     setStatus("syncing");
     setLastError(null);
+    setDiagnostics(null);
     try {
       const summary: SyncSummary = await runSync(token);
-      if (summary.diagnostics) setDiagnostics(summary.diagnostics);
+      setReceivedParts(summary.receivedParts);
+      setReceivedActiveParts(summary.receivedActiveParts);
+      setReceivedDeletedParts(summary.receivedDeletedParts);
+      setCachedParts(summary.cachedParts);
+      setProtectedIds(summary.protectedIds ?? []);
+      setMissingActiveIds(summary.missingActiveIds ?? []);
+      if (summary.diagnostics) {
+        setDiagnostics(summary.diagnostics);
+      } else if (summary.serverError || summary.failed > 0) {
+        setDiagnostics({
+          path: "/api/parts/push",
+          method: "POST",
+          httpStatus: null,
+          kind: "unexpected",
+          timeout: false,
+          fetchError: false,
+          parseOk: true,
+          bodySnippet: "La sincronización terminó con error pero no devolvió diagnóstico.",
+          classification: "missing_diagnostic",
+          at: new Date().toISOString(),
+        });
+      }
       if (summary.authError) {
         await signOut();
         return;
       }
+      // runSync persists the server cursor in SQLite. Refresh the session
+      // context so the Sync screen immediately shows the new timestamp.
+      await refreshSession();
       if (summary.conflicts > 0) setConflictNotice(true);
       const msg = messageFor(summary);
       setLastError(msg);
@@ -96,10 +140,20 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       running.current = false;
       await refreshPending();
     }
-  }, [token, online, signOut, refreshPending]);
+  }, [token, online, signOut, refreshSession, refreshPending]);
+
+  // If a sync request arrived while another pass was running, execute one
+  // additional pass after the current pass has returned to idle.
+  useEffect(() => {
+    if (status !== "idle" || !rerunRequested.current || !token || !online) return;
+    rerunRequested.current = false;
+    void syncNow();
+  }, [status, token, online, syncNow]);
 
   // Initial pass on mount (once we have a token and are online).
   useEffect(() => {
+    // Initial async hydration/sync is intentionally started from the effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refreshPending();
     if (token && online) void syncNow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -118,11 +172,17 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       lastError,
       conflictNotice,
       diagnostics,
+      receivedParts,
+      receivedActiveParts,
+      receivedDeletedParts,
+      cachedParts,
+      protectedIds,
+      missingActiveIds,
       syncNow,
       refreshPending,
       clearConflictNotice: () => setConflictNotice(false),
     }),
-    [status, pendingCount, lastError, conflictNotice, diagnostics, syncNow, refreshPending],
+    [status, pendingCount, lastError, conflictNotice, diagnostics, receivedParts, receivedActiveParts, receivedDeletedParts, cachedParts, protectedIds, missingActiveIds, syncNow, refreshPending],
   );
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;

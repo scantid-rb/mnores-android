@@ -1,13 +1,10 @@
-// Central configuration. The API base URL is read ONLY from the environment
-// (EXPO_PUBLIC_API_BASE_URL). Never hard-code the URL elsewhere in the app.
-// Development value lives in frontend/.env; production will switch to HTTPS
-// without changing any source code.
+// Static build configuration. The API endpoint itself is dynamic and is
+// resolved by serverConfig.ts at runtime. EXPO_PUBLIC_API_BASE_URL is only the
+// first-install fallback when no server has been selected yet.
 
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL as string;
+export const DEFAULT_API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_BASE_URL || "https://mnores.atwebpages.com";
 
-// The mobile app version is independent from the backend API version.
-export const APP_VERSION = "0.1.0";
-export const API_VERSION = "1.4.2";
-
-// Bounded network timeout for a single request.
-export const REQUEST_TIMEOUT_MS = 15000;
+export const APP_VERSION = "0.1.3";
+export const API_VERSION = "1.4.4";
+export const REQUEST_TIMEOUT_MS = 20000;

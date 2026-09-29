@@ -1,23 +1,20 @@
-// First functional Sync Engine.
-//   processQueue: push each pending_change to POST /api/parts/push (one item
-//                 per request so a poison item cannot block the others), then
-//                 apply the per-item result exactly as the server reports it.
-//   pullAndReconcile: GET /api/sync and merge, protecting rows that still have
-//                 pending changes.
-// It only runs on triggers (app start, reconnect, manual). It never loops
-// aggressively and never loses or duplicates operations. Errors are classified
-// precisely (connectivity vs HTTP/parse/API) and captured for diagnostics.
+// Sync Engine.
+// Pushes pending changes, then pulls either the initial full snapshot or an
+// incremental /api/sync?since=<last_server_time> delta and reconciles it with
+// the existing local cache.
 
 import { ApiError } from "@/src/services/api/client";
-import { apiGetSync, apiPush } from "@/src/services/api/endpoints";
+import { uploadPartPhoto } from "@/src/services/photos/photoService";
+import * as FileSystem from "expo-file-system/legacy";
+import { apiGetBoats, apiGetCategories, apiGetSync, apiGetUsers, apiPush } from "@/src/services/api/endpoints";
 import { localStore } from "@/src/database/store";
-import { PendingChange, PushChange, PushResult } from "@/src/types";
+import { LocalPart, Part, PendingChange, PushChange, PushResult } from "@/src/types";
 
 export interface SyncDiagnostics {
   path: string;
   method: string;
   httpStatus: number | null;
-  kind: string; // ok | network | timeout | http | parse | api | auth
+  kind: string;
   timeout: boolean;
   fetchError: boolean;
   parseOk: boolean;
@@ -36,6 +33,12 @@ export interface SyncSummary {
   networkError: boolean;
   serverError: boolean;
   diagnostics: SyncDiagnostics | null;
+  receivedParts: number;
+  receivedActiveParts: number;
+  receivedDeletedParts: number;
+  cachedParts: number;
+  protectedIds: number[];
+  missingActiveIds: number[];
 }
 
 function buildChange(entry: PendingChange): PushChange {
@@ -54,9 +57,18 @@ function buildChange(entry: PendingChange): PushChange {
     };
   }
   if (entry.action === "update") {
-    return { action: "update", id: entry.entity_id ?? undefined, base_updated_at: entry.base_updated_at, ...payload };
+    return {
+      action: "update",
+      id: entry.entity_id ?? undefined,
+      base_updated_at: entry.base_updated_at,
+      ...payload,
+    };
   }
-  return { action: "delete", id: entry.entity_id ?? undefined, base_updated_at: entry.base_updated_at };
+  return {
+    action: "delete",
+    id: entry.entity_id ?? undefined,
+    base_updated_at: entry.base_updated_at,
+  };
 }
 
 function matchResult(entry: PendingChange, results: PushResult[]): PushResult | undefined {
@@ -66,26 +78,11 @@ function matchResult(entry: PendingChange, results: PushResult[]): PushResult | 
   return results.find((r) => r.action === entry.action && r.id === entry.entity_id);
 }
 
-function successDiag(): SyncDiagnostics {
-  return {
-    path: "/api/parts/push",
-    method: "POST",
-    httpStatus: 200,
-    kind: "ok",
-    timeout: false,
-    fetchError: false,
-    parseOk: true,
-    bodySnippet: null,
-    classification: "ok",
-    at: new Date().toISOString(),
-  };
-}
-
-function errorDiag(e: ApiError): SyncDiagnostics {
+function errorDiag(e: ApiError, path = "/api/parts/push", method = "POST"): SyncDiagnostics {
   const isAuth = e.status === 401 || e.status === 403;
   return {
-    path: "/api/parts/push",
-    method: "POST",
+    path,
+    method,
     httpStatus: e.status || null,
     kind: e.kind,
     timeout: e.kind === "timeout",
@@ -93,6 +90,22 @@ function errorDiag(e: ApiError): SyncDiagnostics {
     parseOk: e.kind !== "parse",
     bodySnippet: e.bodySnippet,
     classification: isAuth ? "auth" : e.kind,
+    at: new Date().toISOString(),
+  };
+}
+
+function unknownDiag(e: unknown, path = "/api/parts/push", method = "POST"): SyncDiagnostics {
+  const message = e instanceof Error ? e.message : String(e);
+  return {
+    path,
+    method,
+    httpStatus: null,
+    kind: "unexpected",
+    timeout: false,
+    fetchError: false,
+    parseOk: true,
+    bodySnippet: message ? message.slice(0, 300) : "Error desconocido sin mensaje.",
+    classification: "unexpected",
     at: new Date().toISOString(),
   };
 }
@@ -112,13 +125,14 @@ async function processQueue(token: string): Promise<SyncSummary> {
   const summary: SyncSummary = {
     pushed: 0, ok: 0, conflicts: 0, failed: 0, notFound: 0,
     authError: false, networkError: false, serverError: false, diagnostics: null,
+    receivedParts: 0, receivedActiveParts: 0, receivedDeletedParts: 0, cachedParts: 0,
+    protectedIds: [], missingActiveIds: [],
   };
 
   const pending = await localStore.getPendingChanges();
   if (pending.length === 0) return summary;
 
   let errDiag: SyncDiagnostics | null = null;
-  let lastDiag: SyncDiagnostics | null = null;
 
   for (const entry of pending) {
     summary.pushed++;
@@ -127,31 +141,27 @@ async function processQueue(token: string): Promise<SyncSummary> {
     let response;
     try {
       response = await apiPush(token, [buildChange(entry)]);
-      lastDiag = successDiag();
     } catch (e) {
       if (e instanceof ApiError) {
         const d = errorDiag(e);
-        lastDiag = d;
         if (!errDiag) errDiag = d;
 
         if (e.status === 401 || e.status === 403) {
           summary.authError = true;
           await localStore.revertSyncing([entry.queue_id]);
-          break; // needs re-login
+          break;
         }
         if (e.kind === "network" || e.kind === "timeout") {
-          // Genuine connectivity problem: keep everything, stop early.
           summary.networkError = true;
           await localStore.revertSyncing([entry.queue_id]);
           break;
         }
-        // HTTP / parse / API rejection of THIS operation. Do not block others.
         summary.serverError = true;
         await localStore.markRetry(entry.queue_id, `HTTP ${e.status} (${e.kind})`);
         continue;
       }
-      // Unexpected client error: keep the op, stop.
       summary.serverError = true;
+      summary.diagnostics = unknownDiag(e);
       await localStore.revertSyncing([entry.queue_id]);
       break;
     }
@@ -170,7 +180,6 @@ async function processQueue(token: string): Promise<SyncSummary> {
         await applyOk(entry, res);
         break;
       case "conflict_overwritten":
-        // Server applied its decision; complete and reconcile via /api/sync.
         summary.conflicts++;
         await applyOk(entry, res);
         break;
@@ -183,31 +192,199 @@ async function processQueue(token: string): Promise<SyncSummary> {
       case "invalid":
       default:
         summary.failed++;
+        summary.diagnostics = {
+          path: "/api/parts/push",
+          method: "POST",
+          httpStatus: 200,
+          kind: "api_result",
+          timeout: false,
+          fetchError: false,
+          parseOk: true,
+          bodySnippet: JSON.stringify({
+            action: res.action,
+            id: res.id ?? null,
+            local_id: res.local_id ?? null,
+            status: res.status,
+          }),
+          classification: res.status,
+          at: new Date().toISOString(),
+        };
         await localStore.markFailed(entry.queue_id, entry.row_uid, res.status);
         break;
     }
   }
 
-  summary.diagnostics = errDiag ?? lastDiag;
+  // Preserve a logical API rejection diagnostic; a later HTTP-200 success must not overwrite it.\n  summary.diagnostics = errDiag ?? summary.diagnostics;
   return summary;
 }
 
-export async function pullAndReconcile(token: string): Promise<void> {
-  const protectedIds = await localStore.getProtectedServerIds();
-  const sync = await apiGetSync(token);
-  await localStore.reconcileInventory(
-    { boats: sync.boats ?? [], categories: sync.categories ?? [], parts: sync.parts ?? [] },
-    protectedIds,
-  );
-  await localStore.setLastSyncAt(sync.server_time);
+async function processPhotoQueue(token: string, summary: SyncSummary): Promise<void> {
+  const photos = await localStore.getPendingPhotos();
+  for (const photo of photos) {
+    if (photo.server_id == null) continue;
+    const info = await FileSystem.getInfoAsync(photo.local_path);
+    if (!info.exists) {
+      await localStore.markPhotoRetry(photo.queue_id, "archivo local de foto no encontrado");
+      summary.serverError = true;
+      summary.diagnostics = {
+        path: `/api/photos/${photo.server_id}`,
+        method: "POST",
+        httpStatus: null,
+        kind: "local_file",
+        timeout: false,
+        fetchError: false,
+        parseOk: true,
+        bodySnippet: "Archivo local de foto no encontrado.",
+        classification: "local_file",
+        at: new Date().toISOString(),
+      };
+      continue;
+    }
+    try {
+      const result = await uploadPartPhoto(token, photo.server_id, photo.local_path);
+      await localStore.applyPhotoOk(photo.row_uid, result.updated_at);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        const d = errorDiag(e, `/api/photos/${photo.server_id}`, "POST");
+        summary.diagnostics = summary.diagnostics ?? d;
+        if (e.status === 401 || e.status === 403) {
+          summary.authError = true;
+          return;
+        }
+        if (e.kind === "network" || e.kind === "timeout") {
+          summary.networkError = true;
+          return;
+        }
+        summary.serverError = true;
+        await localStore.markPhotoRetry(photo.queue_id, `HTTP ${e.status} (${e.kind})`);
+      } else {
+        summary.serverError = true;
+        summary.diagnostics = summary.diagnostics ?? unknownDiag(e, `/api/photos/${photo.server_id}`, "POST");
+        await localStore.markPhotoRetry(photo.queue_id, "error inesperado al subir foto");
+      }
+    }
+  }
 }
 
-// Full sync pass: push the queue, then pull & reconcile.
+function mergeById<T extends { id: number }>(current: T[], delta: T[]): T[] {
+  const merged = new Map<number, T>();
+  for (const row of current) merged.set(row.id, row);
+  for (const row of delta) merged.set(row.id, row);
+  return Array.from(merged.values());
+}
+
+function localPartToServerPart(part: LocalPart): Part | null {
+  if (part.server_id == null) return null;
+  return {
+    id: part.server_id,
+    boat_id: part.boat_id,
+    name: part.name,
+    reference: part.reference,
+    category_id: part.category_id,
+    location: part.location,
+    quantity: part.quantity,
+    notes: part.notes,
+    photo_path: part.photo_path,
+    updated_at: part.updated_at,
+    deleted_at: part.deleted_at,
+  };
+}
+
+function mergeParts(current: LocalPart[], delta: Part[]): Part[] {
+  // Incremental reconciliation uses the server_id as the canonical identity.
+  // row_uid is a local persistence key and must never be used as the server id.
+  const currentServerParts = current
+    .map(localPartToServerPart)
+    .filter((part): part is Part => part !== null);
+  return mergeById(currentServerParts, delta);
+}
+
+export async function pullAndReconcile(token: string): Promise<{ receivedParts: number; cachedParts: number }> {
+  const session = await localStore.getSession();
+  const lastSyncAt = session?.last_sync_at ?? null;
+
+  const protectedIds = await localStore.getProtectedServerIds();
+  const sync = await apiGetSync(token, lastSyncAt);
+
+  // Boats are a small administrative catalog and physical boat deletion does
+  // not leave a tombstone. Fetch the authoritative boat snapshot directly
+  // after every sync so a deleted boat can never remain in the local cache.
+  const [authoritativeBoats, authoritativeCategories, authoritativeUsers] = await Promise.all([
+    apiGetBoats(token),
+    apiGetCategories(token),
+    apiGetUsers(token),
+  ]);
+
+  if (!lastSyncAt) {
+    // First sync: the API returns the complete visible dataset.
+    await localStore.reconcileInventory(
+      { boats: authoritativeBoats, users: authoritativeUsers, categories: authoritativeCategories, parts: sync.parts ?? [] },
+      protectedIds,
+    );
+  } else {
+    // Incremental sync: /api/sync returns only changed rows. Merge those
+    // changes with the local cache before calling the existing reconciliation
+    // logic, otherwise unchanged local rows would be mistaken for deletions.
+    const currentParts = await localStore.searchParts({});
+
+    const boats = authoritativeBoats;
+    const categories = authoritativeCategories;
+    const parts = mergeParts(currentParts, sync.parts ?? []);
+
+    await localStore.reconcileInventory(
+      { boats, users: authoritativeUsers, categories, parts },
+      protectedIds,
+    );
+  }
+
+  // Advance the cursor only after the complete reconciliation transaction
+  // succeeds. The cursor is the server-provided time, never the device clock.
+  await localStore.setLastSyncAt(sync.server_time);
+  const counts = await localStore.getCounts();
+  const receivedParts = sync.parts ?? [];
+  const cached = await localStore.searchParts({});
+  const activeIds = receivedParts.filter((p) => !p.deleted_at).map((p) => p.id);
+  const cachedIds = new Set(cached.filter((p) => p.server_id != null).map((p) => p.server_id as number));
+  return {
+    receivedParts: receivedParts.length,
+    receivedActiveParts: activeIds.length,
+    receivedDeletedParts: receivedParts.filter((p) => !!p.deleted_at).length,
+    cachedParts: counts.parts,
+    protectedIds: protectedIds,
+    missingActiveIds: activeIds.filter((id) => !cachedIds.has(id)),
+  };
+}
+
 export async function runSync(token: string): Promise<SyncSummary> {
   const summary = await processQueue(token);
-  if (summary.authError || summary.networkError) return summary; // skip pull
+  if (summary.authError || summary.networkError) return summary;
+
+  // Inventory reconciliation must not be blocked by an independent photo
+  // upload failure. A photo is retried from photo_queue on the next pass.
+  // diagnostic even if a future queue-path change fails to attach one.
+  if (summary.failed > 0 && !summary.diagnostics) {
+    summary.diagnostics = {
+      path: "/api/parts/push",
+      method: "POST",
+      httpStatus: 200,
+      kind: "api_result",
+      timeout: false,
+      fetchError: false,
+      parseOk: true,
+      bodySnippet: "El servidor devolvió al menos un resultado con status no aceptado.",
+      classification: "api_result",
+      at: new Date().toISOString(),
+    };
+  }
+
   try {
-    await pullAndReconcile(token);
+    const syncStats = await pullAndReconcile(token);
+    summary.receivedParts = syncStats.receivedParts;
+    summary.receivedActiveParts = syncStats.receivedActiveParts;
+    summary.receivedDeletedParts = syncStats.receivedDeletedParts;
+    summary.cachedParts = syncStats.cachedParts;
+    summary.protectedIds = syncStats.protectedIds;
+    summary.missingActiveIds = syncStats.missingActiveIds;
   } catch (e) {
     if (e instanceof ApiError && (e.kind === "network" || e.kind === "timeout")) {
       summary.networkError = true;
@@ -215,8 +392,16 @@ export async function runSync(token: string): Promise<SyncSummary> {
       summary.authError = true;
     } else {
       summary.serverError = true;
-      if (e instanceof ApiError) summary.diagnostics = { ...errorDiag(e), path: "/api/sync", method: "GET" };
+      if (e instanceof ApiError) {
+        summary.diagnostics = errorDiag(e, "/api/sync", "GET");
+      } else {
+        summary.diagnostics = unknownDiag(e, "/api/sync", "GET");
+      }
     }
   }
+  if (!summary.authError && !summary.networkError) {
+    await processPhotoQueue(token, summary);
+  }
+
   return summary;
 }

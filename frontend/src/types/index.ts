@@ -1,4 +1,4 @@
-// Domain types mirroring the MNores PHP API 1.4.2 contract + local-only types.
+// Domain types mirroring the MNores PHP API 1.4.3 contract + local-only types.
 
 export type Role = "admin" | "inspector" | "chief_engineer" | "mechanic";
 
@@ -6,7 +6,18 @@ export interface SessionUser {
   id: number;
   username: string;
   role: Role;
-  boat_id: number;
+  boat_id: number | null;
+}
+
+export interface User {
+  id: number;
+  username: string;
+  first_name: string;
+  last_name: string;
+  role: Role;
+  boat_id: number | null;
+  is_active: number;
+  is_primary_admin: number;
 }
 
 export interface Boat {
@@ -37,6 +48,7 @@ export interface Part {
   quantity: number;
   notes: string | null;
   photo_path: string | null;
+  local_photo_path: string | null;
   updated_at: string | null;
   deleted_at?: string | null;
 }
@@ -47,6 +59,7 @@ export interface SyncResponse {
   boats: Boat[];
   categories: Category[];
   parts: Part[];
+  users?: User[];
 }
 
 // Local persisted session row (metadata only — never the token/password).
@@ -54,7 +67,7 @@ export interface SessionRow {
   id: number;
   username: string;
   role: Role;
-  boat_id: number;
+  boat_id: number | null;
   last_sync_at: string | null;
 }
 
@@ -64,6 +77,19 @@ export interface SessionRow {
 // ---------------------------------------------------------------------------
 
 export type SyncState = "synced" | "pending" | "syncing" | "error" | "conflict";
+
+export type PhotoQueueStatus = "pending" | "uploading" | "failed";
+
+export interface PendingPhoto {
+  queue_id: string;
+  row_uid: string;
+  server_id: number | null;
+  local_path: string;
+  retry_count: number;
+  last_error: string | null;
+  status: PhotoQueueStatus;
+  created_at: string;
+}
 
 export interface LocalPart {
   row_uid: string;
@@ -156,4 +182,30 @@ export interface PushResponse {
   ok: boolean;
   server_time: string;
   results: PushResult[];
+}
+
+export interface AuditEntry {
+  id: number;
+  at_utc: string;
+  actor_id: number | null;
+  actor_username: string | null;
+  operation: string;
+  object_type: string;
+  object_id: number | null;
+  boat_id: number | null;
+  boat_name: string | null;
+  old_data: Record<string, unknown> | null;
+  new_data: Record<string, unknown> | null;
+}
+
+export interface AuditResponse {
+  ok: boolean;
+  rows: AuditEntry[];
+  page: number;
+  per_page: number;
+  total: number;
+  pages: number;
+  operations: string[];
+  object_types: string[];
+  actors: string[];
 }
