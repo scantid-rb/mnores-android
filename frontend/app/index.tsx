@@ -14,7 +14,13 @@ export default function Index() {
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.brandPrimary }]} testID="splash-screen">
-        <Image source={require("../assets/images/app-image.png")} style={styles.appImage} resizeMode="contain" accessibilityLabel="ShipInventory" />\n        <Text style={[styles.title, { color: colors.onBrandPrimary }]}>ShipInventory</Text>
+        <Image
+          source={require("../assets/images/app-image.png")}
+          style={styles.appImage}
+          resizeMode="contain"
+          accessibilityLabel="ShipInventory"
+        />
+        <Text style={[styles.title, { color: colors.onBrandPrimary }]}>ShipInventory</Text>
         <ActivityIndicator color={colors.onBrandPrimary} style={{ marginTop: 16 }} />
       </View>
     );
@@ -26,5 +32,6 @@ export default function Index() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: "center", justifyContent: "center" },
-  appImage: { width: 140, height: 140, marginBottom: 8 },\n  title: { fontSize: 24, fontWeight: "800" },
+  appImage: { width: 140, height: 140, marginBottom: 8 },
+  title: { fontSize: 24, fontWeight: "800" },
 });
