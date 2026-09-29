@@ -63,6 +63,7 @@ export default function LoginScreen() {
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <KeyboardAwareScrollView bottomOffset={24} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
+          <Image source={require("@/assets/images/app-image.png")} style={styles.appImage} resizeMode="contain" />
           <Text style={styles.brand}>ShipInventory</Text>
           <Text style={styles.subtitle}>Inventario de repuestos a bordo</Text>
           <View style={styles.badgeRow}><StatusBadge online={online} /></View>
