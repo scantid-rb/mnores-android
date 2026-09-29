@@ -10,6 +10,7 @@ const config: ExpoConfig = {
   icon: "./assets/images/icon.png",
   scheme: "shipinventory",
   userInterfaceStyle: "automatic",
+  description: "Servicio de gestion de inventario para barcos",
 
   ios: {
     supportsTablet: true,
@@ -81,7 +82,7 @@ const config: ExpoConfig = {
     },
   },
 
-  owner: "mnores",
+  owner: "x6tence",
 };
 
 export default config;
