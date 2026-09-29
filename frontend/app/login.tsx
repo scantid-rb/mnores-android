@@ -3,7 +3,7 @@
 
 import { Redirect, useRouter } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, Text, TextInput, View } from "react-native";
 import { SymbolView } from "expo-symbols";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -109,7 +109,7 @@ export default function LoginScreen() {
 const useStyles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.surface },
   content: { flexGrow: 1, justifyContent: "center", padding: 24, gap: 20 },
-  header: { alignItems: "center", gap: 6 },
+  header: { alignItems: "center", gap: 6 },\n  appImage: { width: 120, height: 120, marginBottom: 4 },
   brand: { fontSize: 28, fontWeight: "800", color: colors.brandPrimary },
   subtitle: { fontSize: 14, color: colors.muted },
   badgeRow: { marginTop: 8 },
