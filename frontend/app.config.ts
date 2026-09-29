@@ -1,5 +1,7 @@
 import type { ExpoConfig } from "expo/config";
 
+const isArm64Preview = process.env.EAS_BUILD_PROFILE === "preview-arm64";
+
 const config: ExpoConfig = {
   name: "ShipInventory",
   slug: "shipinventory",
@@ -55,6 +57,18 @@ const config: ExpoConfig = {
         microphonePermission: false,
       },
     ],
+    ...(isArm64Preview
+      ? [
+          [
+            "expo-build-properties",
+            {
+              android: {
+                buildArchs: ["arm64-v8a"],
+              },
+            },
+          ],
+        ]
+      : []),
   ],
 
   experiments: {
