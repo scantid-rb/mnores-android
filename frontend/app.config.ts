@@ -76,6 +76,12 @@ const config: ExpoConfig = {
     typedRoutes: true,
   },
 
+  extra: {
+    eas: {
+      projectId: "5988943e-bff8-4a37-a723-14c55c3f5651",
+    },
+  },
+
   owner: "x6tence",
 };
 
