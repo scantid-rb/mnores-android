@@ -3221,6 +3221,12 @@ expo-keep-awake@~57.0.2:
   resolved "https://registry.yarnpkg.com/expo-keep-awake/-/expo-keep-awake-57.0.2.tgz#ce266252ad478523bb3431d40f67bd643f86bd9c"
   integrity sha512-GqgH746wtJImmsbyHmCQoi7cOslKuWQBbJHXr53S35Bpf5UvxCAztvnitUEd7D0QvFN2rvkOhylbZpgZZfBLlQ==
 
+expo-navigation-bar@~57.0.3:
+  version "57.0.3"
+  resolved "https://registry.yarnpkg.com/expo-navigation-bar/-/expo-navigation-bar-57.0.3.tgz"
+  dependencies:
+    debug "^4.3.2"
+
 expo-linear-gradient@57.0.2:
   version "57.0.2"
   resolved "https://registry.yarnpkg.com/expo-linear-gradient/-/expo-linear-gradient-57.0.2.tgz#a9d85700cd822678556a6166640b0240d31fe011"
