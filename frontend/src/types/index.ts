@@ -1,12 +1,24 @@
-// Domain types mirroring the MNores PHP API 1.4.3 contract + local-only types.
+// Domain types mirroring the MNores PHP API 1.4.5 contract + local-only types.
 
 export type Role = "admin" | "inspector" | "chief_engineer" | "mechanic";
 
 export interface SessionUser {
   id: number;
   username: string;
+  first_name?: string;
+  last_name?: string;
   role: Role;
   boat_id: number | null;
+}
+
+export interface AccountUser {
+  id: number;
+  username: string;
+  first_name: string;
+  last_name: string;
+  role: Role;
+  boat_id: number | null;
+  is_active: number;
 }
 
 export interface User {
@@ -37,7 +49,6 @@ export interface Category {
   deleted_at: string | null;
 }
 
-// Part as returned by the server (/api/sync).
 export interface Part {
   id: number;
   boat_id: number;
@@ -62,7 +73,6 @@ export interface SyncResponse {
   users?: User[];
 }
 
-// Local persisted session row (metadata only — never the token/password).
 export interface SessionRow {
   id: number;
   username: string;
@@ -71,13 +81,7 @@ export interface SessionRow {
   last_sync_at: string | null;
 }
 
-// ---------------------------------------------------------------------------
-// Local-only model (offline-first). A part row is keyed by a stable local
-// row_uid. server_id is null until a locally-created part is acknowledged.
-// ---------------------------------------------------------------------------
-
 export type SyncState = "synced" | "pending" | "syncing" | "error" | "conflict";
-
 export type PhotoQueueStatus = "pending" | "uploading" | "failed";
 
 export interface PendingPhoto {
@@ -115,11 +119,11 @@ export type QueueStatus = "pending" | "syncing" | "failed";
 export interface PendingChange {
   queue_id: string;
   action: QueueAction;
-  entity: string; // always "part" in Phase 2
-  entity_id: number | null; // server id when known
+  entity: string;
+  entity_id: number | null;
   row_uid: string;
-  client_local_id: string | null; // for creates
-  payload: string; // JSON
+  client_local_id: string | null;
+  payload: string;
   base_updated_at: string | null;
   created_at: string;
   retry_count: number;
@@ -127,7 +131,6 @@ export interface PendingChange {
   status: QueueStatus;
 }
 
-// Fields a user can edit on a part.
 export interface EditablePartFields {
   name?: string;
   reference?: string | null;
@@ -148,7 +151,6 @@ export interface CreatePartInput {
   notes: string | null;
 }
 
-// A single change entry sent to POST /api/parts/push.
 export interface PushChange {
   action: QueueAction;
   local_id?: string;
