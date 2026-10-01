@@ -5,7 +5,7 @@ const isArm64Preview = process.env.EAS_BUILD_PROFILE === "preview-arm64";
 const config: ExpoConfig = {
   name: "ShipInventory",
   slug: "shipinventory",
-  version: "0.1.3",
+  version: "0.1.4",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: "shipinventory",
