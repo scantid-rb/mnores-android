@@ -35,6 +35,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="sync" options={{ title: "Sync", href: readonly ? null : "/sync", tabBarIcon: () => null, tabBarLabel: ({ focused }) => <TabLabel label="Sync" focused={focused} /> }} />
       <Tabs.Screen name="admin" options={{ title: "Administración", href: readonly || !canOpenAdministration ? null : "/admin", tabBarIcon: () => null, tabBarLabel: ({ focused }) => <TabLabel label="Administración" focused={focused} /> }} />
       <Tabs.Screen name="profile" options={{ title: "Perfil", href: readonly ? null : "/profile", tabBarIcon: () => null, tabBarLabel: ({ focused }) => <TabLabel label="Perfil" focused={focused} /> }} />
+      <Tabs.Screen name="about" options={{ title: "Acerca de", href: "/about", tabBarIcon: () => null, tabBarLabel: ({ focused }) => <TabLabel label="Acerca de" focused={focused} /> }} />
     </Tabs>
   );
 }
