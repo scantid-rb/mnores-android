@@ -44,6 +44,12 @@ const config: ExpoConfig = {
     ],
     "expo-font",
     "expo-image",
+    [
+      "expo-navigation-bar",
+      {
+        hidden: true,
+      },
+    ],
     "expo-secure-store",
     "expo-web-browser",
     "expo-status-bar",
