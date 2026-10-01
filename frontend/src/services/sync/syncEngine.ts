@@ -110,7 +110,7 @@ function unknownDiag(e: unknown, path = "/api/parts/push", method = "POST"): Syn
 }
 
 async function applyOk(entry: PendingChange, res: PushResult): Promise<void> {
-  console.info("[PWA-SYNC] applyOk", {
+  console.info("[SYNC] applyOk", {
     queue_id: entry.queue_id,
     action: entry.action,
     row_uid: entry.row_uid,
@@ -137,7 +137,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
   };
 
   const pending = await localStore.getPendingChanges();
-  console.info("[PWA-SYNC] queue before", {
+  console.info("[SYNC] queue before", {
     count: pending.length,
     entries: pending.map((e) => ({
       queue_id: e.queue_id,
@@ -160,7 +160,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
     const entry = await localStore.claimChange(candidate.queue_id);
     if (!entry) continue;
     summary.pushed++;
-    console.info("[PWA-SYNC] sending", {
+    console.info("[SYNC] sending", {
       queue_id: entry.queue_id,
       action: entry.action,
       row_uid: entry.row_uid,
@@ -170,7 +170,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
     let response;
     try {
       response = await apiPush(token, [buildChange(entry)]);
-      console.info("[PWA-SYNC] server response", {
+      console.info("[SYNC] server response", {
         queue_id: entry.queue_id,
         action: entry.action,
         client_local_id: entry.client_local_id,
@@ -204,7 +204,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
 
     const results = response?.results ?? [];
     const res = matchResult(entry, results);
-    console.info("[PWA-SYNC] match", {
+    console.info("[SYNC] match", {
       queue_id: entry.queue_id,
       action: entry.action,
       client_local_id: entry.client_local_id,
@@ -221,7 +221,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
       case "ok":
         summary.ok++;
         await applyOk(entry, res);
-        console.info("[PWA-SYNC] applyOk completed", { queue_id: entry.queue_id });
+        console.info("[SYNC] applyOk completed", { queue_id: entry.queue_id });
         break;
       case "conflict_overwritten":
         summary.conflicts++;
@@ -260,7 +260,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
 
   // Preserve a logical API rejection diagnostic; a later HTTP-200 success must not overwrite it.\n  summary.diagnostics = errDiag ?? summary.diagnostics;
   const pendingAfter = await localStore.getPendingChanges();
-  console.info("[PWA-SYNC] queue after", {
+  console.info("[SYNC] queue after", {
     count: pendingAfter.length,
     entries: pendingAfter.map((e) => ({
       queue_id: e.queue_id,
