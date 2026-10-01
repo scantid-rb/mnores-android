@@ -24,6 +24,7 @@ interface SessionContextValue {
   enterReadonly: () => Promise<void>;
   exitReadonly: () => void;
   refreshSession: () => Promise<void>;
+  updateIdentity: (user: SessionUser) => Promise<void>;
   switchServer: (url: string) => Promise<void>;
 }
 
@@ -78,6 +79,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setSession(fresh);
   }, []);
 
+  const updateIdentity = useCallback(async (nextUser: SessionUser) => {
+    await localStore.updateSessionIdentity(nextUser);
+    const fresh = await localStore.getSession();
+    setUser(nextUser);
+    setSession(fresh);
+  }, []);
+
   const signOut = useCallback(async () => {
     await sessionRepository.logout();
     setToken(null);
@@ -117,8 +125,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ loading, token, user, session, cacheAvailable, mode, signIn, signOut, enterReadonly, exitReadonly, refreshSession, switchServer }),
-    [loading, token, user, session, cacheAvailable, mode, signIn, signOut, enterReadonly, exitReadonly, refreshSession, switchServer],
+    () => ({ loading, token, user, session, cacheAvailable, mode, signIn, signOut, enterReadonly, exitReadonly, refreshSession, updateIdentity, switchServer }),
+    [loading, token, user, session, cacheAvailable, mode, signIn, signOut, enterReadonly, exitReadonly, refreshSession, updateIdentity, switchServer],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
