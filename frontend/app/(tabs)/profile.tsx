@@ -25,7 +25,7 @@ export default function ProfileScreen() {
   const styles = useStyles();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { token, user, signOut } = useSession();
+  const { token, user, signOut, updateIdentity } = useSession();
   const { online } = useConnectivity();
   const { data: boats = [] } = useBoats();
 
@@ -98,6 +98,14 @@ export default function ProfileScreen() {
         last_name: lastName.trim(),
       });
       setAccount(updated);
+      await updateIdentity({
+        id: updated.id,
+        username: updated.username,
+        first_name: updated.first_name,
+        last_name: updated.last_name,
+        role: updated.role,
+        boat_id: updated.boat_id,
+      });
       setUsername(updated.username);
       setFirstName(updated.first_name);
       setLastName(updated.last_name);
