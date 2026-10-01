@@ -75,6 +75,16 @@ class WebStore implements LocalStore {
   async saveSession(user: SessionUser): Promise<void> {
     await writeJson(K.session, { ...user, last_sync_at: null } as SessionRow);
   }
+  async updateSessionIdentity(user: SessionUser): Promise<void> {
+    const current = await this.getSession();
+    if (!current || current.id !== user.id) return;
+    await writeJson(K.session, {
+      ...current,
+      username: user.username,
+      role: user.role,
+      boat_id: user.boat_id,
+    } as SessionRow);
+  }
   async getSession(): Promise<SessionRow | null> {
     return readJson<SessionRow | null>(K.session, null);
   }
