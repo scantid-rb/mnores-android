@@ -13,7 +13,7 @@ function detectClientMode(): string {
   if (typeof window === "undefined") return "PWA / navegador";
   const standalone =
     window.matchMedia?.("(display-mode: standalone)")?.matches === true ||
-    (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+    (window.navigator as unknown as { standalone?: boolean }).standalone === true;
   return standalone ? "PWA instalada" : "Navegador web";
 }
 
