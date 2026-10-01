@@ -22,6 +22,7 @@ export interface LocalStore {
 
   // Session metadata (never the token/password).
   saveSession(user: SessionUser): Promise<void>;
+  updateSessionIdentity(user: SessionUser): Promise<void>;
   getSession(): Promise<SessionRow | null>;
   clearSession(): Promise<void>;
   // Clear cached inventory and queued mutations when switching users.
