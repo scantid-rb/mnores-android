@@ -26,7 +26,7 @@ export default function AdministrationScreen() {
 
   const isChief = user?.role === "chief_engineer";
   const modules = isChief
-    ? ALL_MODULES.filter((module) => module.title === "Usuarios" || module.title === "Categorías")
+    ? ALL_MODULES.filter((module) => module.title === "Usuarios")
     : ALL_MODULES;
 
   const roleLabel =
@@ -51,7 +51,7 @@ export default function AdministrationScreen() {
           <Text style={styles.noticeTitle}>{isChief ? "Gestión de mecánicos" : "Área administrativa"}</Text>
           <Text style={styles.noticeText}>
             {isChief
-              ? "Puedes gestionar únicamente los mecánicos de tu barco y consultar las categorías del inventario."
+              ? "Puedes crear, editar, activar, desactivar y eliminar únicamente mecánicos de tu barco asignado."
               : "Los datos administrativos se mantienen disponibles en caché para consulta sin conexión. Las modificaciones requieren conexión a Internet."}
           </Text>
         </View>
