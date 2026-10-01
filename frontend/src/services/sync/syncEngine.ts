@@ -4,8 +4,7 @@
 // the existing local cache.
 
 import { ApiError } from "@/src/services/api/client";
-import { uploadPartPhoto } from "@/src/services/photos/photoService";
-import * as FileSystem from "expo-file-system/legacy";
+import { photoExists, uploadPartPhoto } from "@/src/services/photos/photoService";
 import { apiGetBoats, apiGetCategories, apiGetSync, apiGetUsers, apiPush } from "@/src/services/api/endpoints";
 import { localStore } from "@/src/database/store";
 import { LocalPart, Part, PendingChange, PushChange, PushResult } from "@/src/types";
@@ -111,6 +110,14 @@ function unknownDiag(e: unknown, path = "/api/parts/push", method = "POST"): Syn
 }
 
 async function applyOk(entry: PendingChange, res: PushResult): Promise<void> {
+  console.info("[PWA-SYNC] applyOk", {
+    queue_id: entry.queue_id,
+    action: entry.action,
+    row_uid: entry.row_uid,
+    client_local_id: entry.client_local_id,
+    server_id: res.id ?? null,
+    status: res.status,
+  });
   const updatedAt = res.updated_at ?? new Date().toISOString();
   if (entry.action === "create" && res.id != null) {
     await localStore.applyCreateOk(entry.queue_id, entry.row_uid, res.id, updatedAt);
@@ -130,17 +137,46 @@ async function processQueue(token: string): Promise<SyncSummary> {
   };
 
   const pending = await localStore.getPendingChanges();
+  console.info("[PWA-SYNC] queue before", {
+    count: pending.length,
+    entries: pending.map((e) => ({
+      queue_id: e.queue_id,
+      action: e.action,
+      row_uid: e.row_uid,
+      client_local_id: e.client_local_id,
+      entity_id: e.entity_id,
+      status: e.status,
+    })),
+  });
   if (pending.length === 0) return summary;
 
   let errDiag: SyncDiagnostics | null = null;
 
-  for (const entry of pending) {
+  const attempted = new Set<string>();
+  for (;;) {
+    const candidate = (await localStore.getPendingChanges()).find((e) => e.status === "pending" && !attempted.has(e.queue_id));
+    if (!candidate) break;
+    attempted.add(candidate.queue_id);
+    const entry = await localStore.claimChange(candidate.queue_id);
+    if (!entry) continue;
     summary.pushed++;
-    await localStore.markSyncing([entry.queue_id]);
+    console.info("[PWA-SYNC] sending", {
+      queue_id: entry.queue_id,
+      action: entry.action,
+      row_uid: entry.row_uid,
+      client_local_id: entry.client_local_id,
+    });
 
     let response;
     try {
       response = await apiPush(token, [buildChange(entry)]);
+      console.info("[PWA-SYNC] server response", {
+        queue_id: entry.queue_id,
+        action: entry.action,
+        client_local_id: entry.client_local_id,
+        ok: response?.ok ?? null,
+        results: response?.results ?? [],
+      });
     } catch (e) {
       if (e instanceof ApiError) {
         const d = errorDiag(e);
@@ -168,6 +204,13 @@ async function processQueue(token: string): Promise<SyncSummary> {
 
     const results = response?.results ?? [];
     const res = matchResult(entry, results);
+    console.info("[PWA-SYNC] match", {
+      queue_id: entry.queue_id,
+      action: entry.action,
+      client_local_id: entry.client_local_id,
+      matched: !!res,
+      result: res ?? null,
+    });
 
     if (!res) {
       await localStore.markRetry(entry.queue_id, "sin resultado del servidor");
@@ -178,6 +221,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
       case "ok":
         summary.ok++;
         await applyOk(entry, res);
+        console.info("[PWA-SYNC] applyOk completed", { queue_id: entry.queue_id });
         break;
       case "conflict_overwritten":
         summary.conflicts++;
@@ -215,15 +259,28 @@ async function processQueue(token: string): Promise<SyncSummary> {
   }
 
   // Preserve a logical API rejection diagnostic; a later HTTP-200 success must not overwrite it.\n  summary.diagnostics = errDiag ?? summary.diagnostics;
+  const pendingAfter = await localStore.getPendingChanges();
+  console.info("[PWA-SYNC] queue after", {
+    count: pendingAfter.length,
+    entries: pendingAfter.map((e) => ({
+      queue_id: e.queue_id,
+      action: e.action,
+      row_uid: e.row_uid,
+      client_local_id: e.client_local_id,
+      entity_id: e.entity_id,
+      status: e.status,
+    })),
+  });
   return summary;
 }
 
 async function processPhotoQueue(token: string, summary: SyncSummary): Promise<void> {
   const photos = await localStore.getPendingPhotos();
-  for (const photo of photos) {
-    if (photo.server_id == null) continue;
-    const info = await FileSystem.getInfoAsync(photo.local_path);
-    if (!info.exists) {
+  for (const candidate of photos) {
+    const photo = await localStore.claimPhoto(candidate.queue_id);
+    if (!photo || photo.server_id == null) continue;
+    const exists = await photoExists(photo.local_path);
+    if (!exists) {
       await localStore.markPhotoRetry(photo.queue_id, "archivo local de foto no encontrado");
       summary.serverError = true;
       summary.diagnostics = {
@@ -242,17 +299,19 @@ async function processPhotoQueue(token: string, summary: SyncSummary): Promise<v
     }
     try {
       const result = await uploadPartPhoto(token, photo.server_id, photo.local_path);
-      await localStore.applyPhotoOk(photo.row_uid, result.updated_at);
+      await localStore.applyPhotoOk(photo.queue_id, result.updated_at);
     } catch (e) {
       if (e instanceof ApiError) {
         const d = errorDiag(e, `/api/photos/${photo.server_id}`, "POST");
         summary.diagnostics = summary.diagnostics ?? d;
         if (e.status === 401 || e.status === 403) {
           summary.authError = true;
+          await localStore.markPhotoRetry(photo.queue_id, "Sesión no autorizada");
           return;
         }
         if (e.kind === "network" || e.kind === "timeout") {
           summary.networkError = true;
+          await localStore.markPhotoRetry(photo.queue_id, "Sin conexión");
           return;
         }
         summary.serverError = true;
@@ -299,7 +358,7 @@ function mergeParts(current: LocalPart[], delta: Part[]): Part[] {
   return mergeById(currentServerParts, delta);
 }
 
-export async function pullAndReconcile(token: string): Promise<{ receivedParts: number; cachedParts: number }> {
+export async function pullAndReconcile(token: string): Promise<Pick<SyncSummary, "receivedParts" | "receivedActiveParts" | "receivedDeletedParts" | "cachedParts" | "protectedIds" | "missingActiveIds">> {
   const session = await localStore.getSession();
   const lastSyncAt = session?.last_sync_at ?? null;
 
@@ -317,9 +376,8 @@ export async function pullAndReconcile(token: string): Promise<{ receivedParts: 
 
   if (!lastSyncAt) {
     // First sync: the API returns the complete visible dataset.
-    await localStore.reconcileInventory(
-      { boats: authoritativeBoats, users: authoritativeUsers, categories: authoritativeCategories, parts: sync.parts ?? [] },
-      protectedIds,
+    await localStore.reconcileAndSetCursor(
+      { boats: authoritativeBoats, users: authoritativeUsers, categories: authoritativeCategories, parts: sync.parts ?? [] }, sync.server_time,
     );
   } else {
     // Incremental sync: /api/sync returns only changed rows. Merge those
@@ -331,15 +389,13 @@ export async function pullAndReconcile(token: string): Promise<{ receivedParts: 
     const categories = authoritativeCategories;
     const parts = mergeParts(currentParts, sync.parts ?? []);
 
-    await localStore.reconcileInventory(
-      { boats, users: authoritativeUsers, categories, parts },
-      protectedIds,
+    await localStore.reconcileAndSetCursor(
+      { boats, users: authoritativeUsers, categories, parts }, sync.server_time,
     );
   }
 
   // Advance the cursor only after the complete reconciliation transaction
   // succeeds. The cursor is the server-provided time, never the device clock.
-  await localStore.setLastSyncAt(sync.server_time);
   const counts = await localStore.getCounts();
   const receivedParts = sync.parts ?? [];
   const cached = await localStore.searchParts({});
@@ -403,5 +459,15 @@ export async function runSync(token: string): Promise<SyncSummary> {
     await processPhotoQueue(token, summary);
   }
 
+  const failures = await localStore.getFailedChanges();
+  if (failures.length > 0) {
+    summary.failed = Math.max(summary.failed, failures.length);
+    summary.diagnostics ??= {
+      path: "cola local", method: "POST", httpStatus: null, kind: "queue_failure",
+      timeout: false, fetchError: false, parseOk: true,
+      bodySnippet: failures.map((entry) => entry.last_error ?? "Operación fallida").join("; ").slice(0, 300),
+      classification: "failed", at: new Date().toISOString(),
+    };
+  }
   return summary;
 }
