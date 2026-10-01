@@ -7,6 +7,8 @@ import { inventoryRepository } from "@/src/repositories/inventoryRepository";
 
 export function useParts(query: string, categoryId: number | null, boatId: number | null = null) {
   return useQuery({
+    // IndexedDB/SQLite reads must also run on an offline reload.
+    networkMode: "always",
     queryKey: ["parts", query, categoryId, boatId],
     queryFn: () => inventoryRepository.searchParts(query, categoryId, boatId),
   });
@@ -14,6 +16,8 @@ export function useParts(query: string, categoryId: number | null, boatId: numbe
 
 export function useCategories() {
   return useQuery({
+    // IndexedDB/SQLite reads must also run on an offline reload.
+    networkMode: "always",
     queryKey: ["categories"],
     queryFn: () => inventoryRepository.getCategories(),
   });
@@ -21,6 +25,8 @@ export function useCategories() {
 
 export function useBoats() {
   return useQuery({
+    // IndexedDB/SQLite reads must also run on an offline reload.
+    networkMode: "always",
     queryKey: ["boats"],
     queryFn: () => inventoryRepository.getBoats(),
   });
@@ -28,6 +34,8 @@ export function useBoats() {
 
 export function usePart(rowUid: string) {
   return useQuery({
+    // IndexedDB/SQLite reads must also run on an offline reload.
+    networkMode: "always",
     queryKey: ["part", rowUid],
     queryFn: () => inventoryRepository.getPart(rowUid),
     enabled: !!rowUid,
@@ -36,6 +44,8 @@ export function usePart(rowUid: string) {
 
 export function useCounts() {
   return useQuery({
+    // IndexedDB/SQLite reads must also run on an offline reload.
+    networkMode: "always",
     queryKey: ["counts"],
     queryFn: () => inventoryRepository.getCounts(),
   });
@@ -44,7 +54,10 @@ export function useCounts() {
 
 export function useUsers() {
   return useQuery({
+    // IndexedDB/SQLite reads must also run on an offline reload.
+    networkMode: "always",
     queryKey: ["users"],
     queryFn: () => inventoryRepository.getUsers(),
   });
 }
+
