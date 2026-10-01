@@ -239,8 +239,9 @@ class SqliteStore implements LocalStore {
 
   // ---------------------------------------------------------- reconcile
   async reconcileInventory(
-    data: { boats: Boat[]; categories: Category[]; parts: Part[] },
+    data: { boats: Boat[]; categories: Category[]; parts: Part[]; users?: User[] },
     protectedServerIds: number[],
+    serverTime?: string,
   ): Promise<void> {
     const db = await getDb();
     const protectedSet = new Set(protectedServerIds);
@@ -328,6 +329,8 @@ class SqliteStore implements LocalStore {
           );
         }
       }
+
+      if (serverTime) await db.runAsync("UPDATE session SET last_sync_at = ?;", [serverTime]);
 
       // Remove synced local rows the server no longer has (server-side delete).
       const localSynced = await db.getAllAsync<{ row_uid: string; server_id: number }>(
@@ -461,13 +464,22 @@ class SqliteStore implements LocalStore {
       await db.runAsync(`UPDATE parts SET ${sets.join(", ")} WHERE row_uid = ?;`, [...vals, rowUid]);
 
       if (part.server_id == null) {
-        // Local create not yet synced: merge into the existing create payload,
-        // do NOT create a separate update op (still one create with local_id).
-        const createEntry = await db.getFirstAsync<{ queue_id: string; payload: string }>(
-          "SELECT queue_id, payload FROM pending_changes WHERE row_uid = ? AND action = 'create' LIMIT 1;",
+        const createEntry = await db.getFirstAsync<{ queue_id: string; payload: string; status: string; retry_count: number; last_error: string | null }>(
+          "SELECT queue_id, payload, status, retry_count, last_error FROM pending_changes WHERE row_uid = ? AND action = 'create' LIMIT 1;",
           [rowUid],
         );
-        if (createEntry) {
+        if (createEntry?.status === 'failed' && ['invalid', 'forbidden'].includes(createEntry.last_error ?? '')) {
+          const edits = await db.getAllAsync<{ payload: string }>("SELECT payload FROM pending_changes WHERE row_uid = ? AND action = 'update' ORDER BY created_at;", [rowUid]);
+          const merged = Object.assign(JSON.parse(createEntry.payload), ...edits.map((e) => JSON.parse(e.payload)), stripUndefined(fields));
+          await db.runAsync("UPDATE pending_changes SET payload = ?, status = 'pending', retry_count = 0, last_error = NULL WHERE queue_id = ?;", [JSON.stringify(merged), createEntry.queue_id]);
+          await db.runAsync("DELETE FROM pending_changes WHERE row_uid = ? AND action = 'update';", [rowUid]);
+        } else if (createEntry && (createEntry.status === 'syncing' || createEntry.retry_count > 0)) {
+          await db.runAsync(
+            `INSERT INTO pending_changes (queue_id, action, entity, entity_id, row_uid, client_local_id, payload, base_updated_at, created_at, retry_count, last_error, status)
+             VALUES (?, 'update', 'part', NULL, ?, NULL, ?, NULL, ?, 0, NULL, 'pending');`,
+            [newQueueId(), rowUid, JSON.stringify(stripUndefined(fields)), nowIso()],
+          );
+        } else if (createEntry) {
           const merged = { ...JSON.parse(createEntry.payload || "{}"), ...stripUndefined(fields) };
           await db.runAsync(
             "UPDATE pending_changes SET payload = ?, status = 'pending' WHERE queue_id = ?;",
@@ -475,9 +487,8 @@ class SqliteStore implements LocalStore {
           );
         }
       } else {
-        // Consolidate: reuse an existing pending update op for this row.
         const upd = await db.getFirstAsync<{ queue_id: string; payload: string }>(
-          "SELECT queue_id, payload FROM pending_changes WHERE row_uid = ? AND action = 'update' AND status IN ('pending','syncing') LIMIT 1;",
+          "SELECT queue_id, payload FROM pending_changes WHERE row_uid = ? AND action = 'update' AND status = 'pending' LIMIT 1;",
           [rowUid],
         );
         if (upd) {
@@ -508,10 +519,23 @@ class SqliteStore implements LocalStore {
 
     await db.withTransactionAsync(async () => {
       if (part.server_id == null) {
-        // Never reached the server: drop the local create and its queue entry.
-        await db.runAsync("DELETE FROM pending_changes WHERE row_uid = ? AND action = 'create';", [rowUid]);
-        await db.runAsync("DELETE FROM photo_queue WHERE row_uid = ?;", [rowUid]);
-        await db.runAsync("DELETE FROM parts WHERE row_uid = ?;", [rowUid]);
+        const createEntry = await db.getFirstAsync<{ queue_id: string; status: string; retry_count: number }>(
+          "SELECT queue_id, status, retry_count FROM pending_changes WHERE row_uid = ? AND action = 'create' LIMIT 1;",
+          [rowUid],
+        );
+        if (createEntry && (createEntry.status === "syncing" || createEntry.retry_count > 0)) {
+          await db.runAsync("UPDATE parts SET pending_delete = 1, sync_state = 'pending' WHERE row_uid = ?;", [rowUid]);
+          await db.runAsync(
+            `INSERT INTO pending_changes (queue_id, action, entity, entity_id, row_uid, client_local_id, payload, base_updated_at, created_at, retry_count, last_error, status)
+             VALUES (?, 'delete', 'part', NULL, ?, NULL, ?, NULL, ?, 0, NULL, 'pending');`,
+            [newQueueId(), rowUid, JSON.stringify({}), nowIso()],
+          );
+          await db.runAsync("DELETE FROM photo_queue WHERE row_uid = ?;", [rowUid]);
+        } else {
+          await db.runAsync("DELETE FROM pending_changes WHERE row_uid = ?;", [rowUid]);
+          await db.runAsync("DELETE FROM photo_queue WHERE row_uid = ?;", [rowUid]);
+          await db.runAsync("DELETE FROM parts WHERE row_uid = ?;", [rowUid]);
+        }
       } else {
         // Pending updates are superseded by the delete.
         await db.runAsync("DELETE FROM pending_changes WHERE row_uid = ? AND action = 'update' AND status = 'pending';", [rowUid]);
@@ -550,11 +574,59 @@ class SqliteStore implements LocalStore {
   async getProtectedServerIds(): Promise<number[]> {
     const db = await getDb();
     const rows = await db.getAllAsync<{ entity_id: number }>(
-      "SELECT DISTINCT entity_id FROM pending_changes WHERE entity_id IS NOT NULL AND status IN ('pending','syncing');",
+      "SELECT DISTINCT entity_id FROM pending_changes WHERE entity_id IS NOT NULL;",
     );
     return rows.map((r) => r.entity_id);
   }
 
+  async claimChange(queueId: string): Promise<PendingChange | null> {
+    const db = await getDb();
+    let claimed: PendingChange | null = null;
+    await db.withTransactionAsync(async () => {
+      const row = await db.getFirstAsync<PendingChange>("SELECT * FROM pending_changes WHERE queue_id = ? AND status = 'pending';", [queueId]);
+      if (!row || (row.action !== "create" && row.entity_id == null)) return;
+      await db.runAsync("UPDATE pending_changes SET status = 'syncing', retry_count = MAX(1, retry_count) WHERE queue_id = ? AND status = 'pending';", [queueId]);
+      claimed = { ...row, status: "syncing" };
+    });
+    return claimed;
+  }
+  async claimPhoto(queueId: string): Promise<PendingPhoto | null> {
+    const db = await getDb();
+    let claimed: PendingPhoto | null = null;
+    await db.withTransactionAsync(async () => {
+      const row = await db.getFirstAsync<PendingPhoto>("SELECT * FROM photo_queue WHERE queue_id = ? AND status = 'pending' AND server_id IS NOT NULL;", [queueId]);
+      if (!row) return;
+      await db.runAsync("UPDATE photo_queue SET status = 'uploading' WHERE queue_id = ?;", [queueId]);
+      claimed = { ...row, status: "uploading" };
+    });
+    return claimed;
+  }
+  async getFailedChanges(): Promise<(PendingChange | PendingPhoto)[]> {
+    const db = await getDb();
+    return [...await db.getAllAsync<PendingChange>("SELECT * FROM pending_changes WHERE status = 'failed';"),
+      ...await db.getAllAsync<PendingPhoto>("SELECT * FROM photo_queue WHERE status = 'failed';")];
+  }
+  async retryFailed(): Promise<void> {
+    const db = await getDb();
+    await db.withTransactionAsync(async () => {
+      await db.execAsync("UPDATE pending_changes SET status = 'pending', retry_count = CASE WHEN action = 'create' THEN 1 ELSE 0 END, last_error = NULL WHERE status = 'failed'; UPDATE photo_queue SET status = 'pending', retry_count = 0, last_error = NULL WHERE status = 'failed';");
+      await db.execAsync("UPDATE parts SET sync_state = 'pending' WHERE row_uid IN (SELECT row_uid FROM pending_changes);");
+    });
+  }
+  async discardFailed(): Promise<void> {
+    const db = await getDb();
+    const photos = await db.getAllAsync<PendingPhoto>("SELECT * FROM photo_queue WHERE status = 'failed' OR row_uid IN (SELECT row_uid FROM pending_changes WHERE status = 'failed' AND action = 'create');");
+    await db.withTransactionAsync(async () => {
+      await db.execAsync("DELETE FROM photo_queue WHERE row_uid IN (SELECT row_uid FROM pending_changes WHERE status = 'failed' AND action = 'create'); DELETE FROM pending_changes WHERE status <> 'failed' AND row_uid IN (SELECT row_uid FROM pending_changes WHERE status = 'failed' AND action = 'create');");
+      await db.execAsync("DELETE FROM parts WHERE row_uid IN (SELECT row_uid FROM pending_changes WHERE status = 'failed') AND row_uid NOT IN (SELECT row_uid FROM pending_changes WHERE status <> 'failed');");
+      await db.execAsync("UPDATE parts SET local_photo_path = NULL WHERE row_uid IN (SELECT row_uid FROM photo_queue WHERE status = 'failed');");
+      await db.execAsync("DELETE FROM pending_changes WHERE status = 'failed'; DELETE FROM photo_queue WHERE status = 'failed'; UPDATE session SET last_sync_at = NULL;");
+    });
+    for (const photo of photos) await removeLocalFile(photo.local_path);
+  }
+  async reconcileAndSetCursor(data: { boats: Boat[]; categories: Category[]; parts: Part[]; users?: User[] }, serverTime: string): Promise<void> {
+    await this.reconcileInventory(data, await this.getProtectedServerIds(), serverTime);
+  }
   async markSyncing(queueIds: string[]): Promise<void> {
     if (queueIds.length === 0) return;
     const db = await getDb();
@@ -572,11 +644,21 @@ class SqliteStore implements LocalStore {
   async applyCreateOk(queueId: string, rowUid: string, serverId: number, updatedAt: string): Promise<void> {
     const db = await getDb();
     await db.withTransactionAsync(async () => {
+      const deferred = await db.getAllAsync<{ queue_id: string; action: "update" | "delete" }>(
+        "SELECT queue_id, action FROM pending_changes WHERE row_uid = ? AND queue_id <> ? AND action IN ('update','delete') AND entity_id IS NULL;",
+        [rowUid, queueId],
+      );
       await db.runAsync(
-        "UPDATE parts SET server_id = ?, updated_at = ?, sync_state = 'synced' WHERE row_uid = ?;",
-        [serverId, updatedAt, rowUid],
+        "UPDATE parts SET server_id = ?, updated_at = ?, sync_state = ?, pending_delete = CASE WHEN EXISTS (SELECT 1 FROM pending_changes WHERE row_uid = ? AND action = 'delete' AND queue_id <> ?) THEN 1 ELSE pending_delete END WHERE row_uid = ?;",
+        [serverId, updatedAt, deferred.length > 0 ? "pending" : "synced", rowUid, queueId, rowUid],
       );
       await db.runAsync("UPDATE photo_queue SET server_id = ? WHERE row_uid = ? AND server_id IS NULL;", [serverId, rowUid]);
+      for (const e of deferred) {
+        await db.runAsync(
+          "UPDATE pending_changes SET entity_id = ?, base_updated_at = ?, payload = CASE WHEN action = 'delete' THEN ? ELSE payload END WHERE queue_id = ?;",
+          [serverId, updatedAt, JSON.stringify({ id: serverId }), e.queue_id],
+        );
+      }
       await db.runAsync("DELETE FROM pending_changes WHERE queue_id = ?;", [queueId]);
     });
   }
@@ -584,10 +666,26 @@ class SqliteStore implements LocalStore {
   async applyUpdateOk(queueId: string, serverId: number, updatedAt: string): Promise<void> {
     const db = await getDb();
     await db.withTransactionAsync(async () => {
-      await db.runAsync(
-        "UPDATE parts SET updated_at = ?, sync_state = 'synced' WHERE server_id = ?;",
-        [updatedAt, serverId],
+      const current = await db.getFirstAsync<{ row_uid: string }>(
+        "SELECT row_uid FROM pending_changes WHERE queue_id = ?;",
+        [queueId],
       );
+      const newer = current
+        ? await db.getFirstAsync<{ n: number }>(
+            "SELECT COUNT(*) AS n FROM pending_changes WHERE row_uid = ? AND queue_id <> ? AND status IN ('pending','syncing');",
+            [current.row_uid, queueId],
+          )
+        : null;
+      await db.runAsync(
+        "UPDATE parts SET updated_at = ?, sync_state = ? WHERE server_id = ?;",
+        [updatedAt, newer?.n ? "pending" : "synced", serverId],
+      );
+      if (current) {
+        await db.runAsync(
+          "UPDATE pending_changes SET base_updated_at = ? WHERE row_uid = ? AND queue_id <> ? AND entity_id = ? AND action IN ('update','delete') AND status IN ('pending','syncing');",
+          [updatedAt, current.row_uid, queueId, serverId],
+        );
+      }
       await db.runAsync("DELETE FROM pending_changes WHERE queue_id = ?;", [queueId]);
     });
   }
@@ -603,7 +701,7 @@ class SqliteStore implements LocalStore {
       localPhotoPath = row?.local_photo_path ?? null;
       await db.runAsync("DELETE FROM photo_queue WHERE server_id = ? OR row_uid = ?;", [serverId, row?.row_uid ?? ""]);
       await db.runAsync("DELETE FROM parts WHERE server_id = ?;", [serverId]);
-      await db.runAsync("DELETE FROM pending_changes WHERE queue_id = ?;", [queueId]);
+      await db.runAsync("DELETE FROM pending_changes WHERE queue_id = ? OR entity_id = ? OR row_uid = ?;", [queueId, serverId, row?.row_uid ?? ""]);
     });
     await removeLocalFile(localPhotoPath);
   }
@@ -615,14 +713,15 @@ class SqliteStore implements LocalStore {
     const previousLocalPath = part.local_photo_path;
     await db.withTransactionAsync(async () => {
       await db.runAsync("UPDATE parts SET local_photo_path = ? WHERE row_uid = ?;", [localPath, rowUid]);
-      await db.runAsync("DELETE FROM photo_queue WHERE row_uid = ?;", [rowUid]);
+      await db.runAsync("DELETE FROM photo_queue WHERE row_uid = ? AND status <> 'uploading';", [rowUid]);
       await db.runAsync(
         "INSERT INTO photo_queue (queue_id,row_uid,server_id,local_path,retry_count,last_error,status,created_at) VALUES (?,?,?,?,0,NULL,'pending',?);",
         [newQueueId(), rowUid, part.server_id, localPath, nowIso()],
       );
     });
     if (previousLocalPath && previousLocalPath !== localPath) {
-      await removeLocalFile(previousLocalPath);
+      const inFlight = await db.getFirstAsync("SELECT queue_id FROM photo_queue WHERE local_path = ? AND status = 'uploading';", [previousLocalPath]);
+      if (!inFlight) await removeLocalFile(previousLocalPath);
     }
   }
 
@@ -636,14 +735,18 @@ class SqliteStore implements LocalStore {
     await db.runAsync("UPDATE photo_queue SET server_id = ? WHERE row_uid = ?;", [serverId, rowUid]);
   }
 
-  async applyPhotoOk(rowUid: string, serverUpdatedAt: string): Promise<void> {
+  async applyPhotoOk(queueId: string, serverUpdatedAt: string): Promise<void> {
     const db = await getDb();
+    let localPath: string | null = null;
     await db.withTransactionAsync(async () => {
-      await db.runAsync("UPDATE parts SET photo_path = ?, updated_at = ? WHERE row_uid = ?;", ["server", serverUpdatedAt, rowUid]);
-      await db.runAsync("DELETE FROM photo_queue WHERE row_uid = ?;", [rowUid]);
+      const photo = await db.getFirstAsync<PendingPhoto>("SELECT * FROM photo_queue WHERE queue_id = ?;", [queueId]);
+      if (!photo) return;
+      localPath = photo.local_path;
+      await db.runAsync("UPDATE parts SET photo_path = 'remote', updated_at = ?, local_photo_path = CASE WHEN local_photo_path = ? THEN NULL ELSE local_photo_path END WHERE row_uid = ?;", [serverUpdatedAt, photo.local_path, photo.row_uid]);
+      await db.runAsync("DELETE FROM photo_queue WHERE queue_id = ?;", [queueId]);
     });
+    await removeLocalFile(localPath);
   }
-
   async markPhotoRetry(queueId: string, lastError: string): Promise<void> {
     const db = await getDb();
     const row = await db.getFirstAsync<{ retry_count: number }>("SELECT retry_count FROM photo_queue WHERE queue_id = ?;", [queueId]);
