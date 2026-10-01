@@ -27,7 +27,7 @@ function targetSize(width: number, height: number): { width: number; height: num
 }
 
 async function fileSize(uri: string): Promise<number> {
-  const info = await FileSystem.getInfoAsync(uri, { size: true });
+  const info = await FileSystem.getInfoAsync(uri);
   return info.exists && "size" in info && typeof info.size === "number" ? info.size : 0;
 }
 
@@ -124,30 +124,33 @@ export async function removeLocalPhoto(localPath: string | null | undefined): Pr
   if (localPath) await removeFile(localPath);
 }
 
+export async function photoExists(localPath: string): Promise<boolean> {
+  try {
+    const info = await FileSystem.getInfoAsync(localPath);
+    return info.exists;
+  } catch {
+    return false;
+  }
+}
+
 export async function uploadPartPhoto(token: string, partId: number, localPath: string): Promise<{ updated_at: string }> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let timedOut = false;
+  const task = FileSystem.createUploadTask(
+    `${await getServerUrl()}/api/photos/${partId}`, localPath, {
+      httpMethod: "POST", uploadType: FileSystem.FileSystemUploadType.MULTIPART, fieldName: "photo", mimeType: "image/jpeg",
+      headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+    },
+  );
+  const timer = setTimeout(() => { timedOut = true; void task.cancelAsync(); }, REQUEST_TIMEOUT_MS);
 
   let result: FileSystem.FileSystemUploadResult;
   try {
-    result = await FileSystem.uploadAsync(
-      `${await getServerUrl()}/api/photos/${partId}`,
-      localPath,
-      {
-        httpMethod: "POST",
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: "photo",
-        mimeType: "image/jpeg",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        signal: controller.signal,
-      },
-    );
+    const uploaded = await task.uploadAsync();
+    if (!uploaded) throw new Error("Subida cancelada");
+    result = uploaded;
   } catch (e: unknown) {
     clearTimeout(timer);
-    if ((e as { name?: string })?.name === "AbortError") {
+    if (timedOut || (e as { name?: string })?.name === "AbortError") {
       throw new ApiError("Tiempo de espera agotado", 0, "timeout");
     }
     throw new ApiError("No se pudo subir la foto", 0, "network");
@@ -191,4 +194,9 @@ export async function uploadPartPhoto(token: string, partId: number, localPath: 
 
 export function remotePartPhotoUrl(partId: number): string {
   return `${getServerUrlSync()}/api/photos/${partId}`;
+}
+
+
+export async function resolveLocalPhotoUri(localPath: string | null | undefined): Promise<string | null> {
+  return localPath ?? null;
 }
