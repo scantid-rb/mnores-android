@@ -2,7 +2,7 @@
 // a neutral conflict notice and a manual "Sync now" action.
 
 import { useMemo } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { StatusBadge } from "@/src/components/StatusBadge";
@@ -18,7 +18,7 @@ export default function SyncScreen() {
 
   const { online } = useConnectivity();
   const { session } = useSession();
-  const { status, pendingCount, lastError, conflictNotice, diagnostics, receivedParts, receivedActiveParts, receivedDeletedParts, cachedParts, protectedIds, missingActiveIds, syncNow, clearConflictNotice } = useSync();
+  const { status, pendingCount, failedCount, retryFailed, discardFailed, lastError, conflictNotice, diagnostics, receivedParts, receivedActiveParts, receivedDeletedParts, cachedParts, protectedIds, missingActiveIds, syncNow, clearConflictNotice } = useSync();
   const { data: counts } = useCounts();
 
   const syncing = status === "syncing";
@@ -41,7 +41,20 @@ export default function SyncScreen() {
           <Row label="Conexión" value={online ? "Online" : "Offline"} />
           <Row label="Última sincronización" value={lastSync} />
           <Row label="Cambios pendientes" value={String(pendingCount)} />
+          <Row label="Cambios fallidos" value={String(failedCount)} />
         </View>
+
+        {failedCount > 0 && <View style={styles.card}>
+          <Text style={styles.error}>Hay cambios que no han llegado al servidor.</Text>
+          <Pressable disabled={syncing} onPress={() => void retryFailed()} style={styles.button}>
+            <Text style={styles.buttonText}>Reintentar cambios fallidos</Text>
+          </Pressable>
+          <Pressable disabled={syncing} onPress={() => Alert.alert("Descartar cambios fallidos", "Se eliminarán estos cambios locales y se recuperará el estado del servidor al sincronizar. Esta acción no se puede deshacer.", [
+            { text: "Cancelar", style: "cancel" }, { text: "Descartar", style: "destructive", onPress: () => { void discardFailed(); } },
+          ])}>
+            <Text style={styles.error}>Descartar y recuperar del servidor</Text>
+          </Pressable>
+        </View>}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Cache local</Text>
