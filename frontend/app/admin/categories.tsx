@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,7 +24,9 @@ export default function CategoriesAdminScreen() {
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const canManage = user?.role === "admin" || user?.role === "inspector";
+  const allowed = user?.role === "admin" || user?.role === "inspector";
+
+  useEffect(() => { if (!allowed) router.replace("/inventory"); }, [allowed, router]);
 
   const resetForm = () => { setEditingId(null); setName(""); setError(null); };
   const editCategory = (category: Category) => {
@@ -68,13 +70,15 @@ export default function CategoriesAdminScreen() {
     );
   };
 
+  if (!allowed) return null;
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12}><Text style={styles.back}>‹ Volver</Text></Pressable>
         <View style={styles.headerCenter}>
           <Text style={styles.title}>Categorías</Text>
-          <Text style={styles.subtitle}>{canManage ? "Gestión administrativa" : "Consulta de categorías"}</Text>
+          <Text style={styles.subtitle}>Gestión administrativa</Text>
         </View>
         <StatusBadge online={online} syncing={saving} />
       </View>
@@ -90,7 +94,7 @@ export default function CategoriesAdminScreen() {
           <Text style={styles.infoText}>«Sin categoría» es la categoría predeterminada del sistema y no se puede renombrar ni eliminar.</Text>
         </View>
 
-        {canManage && <View style={styles.formCard}>
+        <View style={styles.formCard}>
           <View style={styles.formHeader}>
             <Text style={styles.sectionTitle}>{editingId == null ? "Nueva categoría" : "Renombrar categoría"}</Text>
             {editingId != null && <Pressable onPress={resetForm} disabled={saving}><Text style={styles.cancel}>Cancelar</Text></Pressable>}
@@ -101,7 +105,7 @@ export default function CategoriesAdminScreen() {
           <Pressable style={[styles.primaryButton, (!online || saving) && styles.disabledButton]} onPress={save} disabled={!online || saving}>
             <Text style={styles.primaryButtonText}>{saving ? "Guardando…" : editingId == null ? "Crear categoría" : "Guardar nombre"}</Text>
           </Pressable>
-        </View>}
+        </View>
 
         <View style={styles.listHeader}>
           <Text style={styles.sectionTitle}>Categorías registradas</Text>
@@ -111,17 +115,11 @@ export default function CategoriesAdminScreen() {
         {categories.map((category) => {
           const system = category.is_system === 1;
           return <View key={category.id} style={styles.categoryCard}>
-            <Pressable
-              style={styles.categoryInfo}
-              onPress={() => router.replace({ pathname: "/inventory", params: { categoryId: String(category.id) } })}
-              testID={`category-open-${category.id}`}
-            >
+            <View style={styles.categoryInfo}>
               <Text style={styles.categoryName}>{category.name}</Text>
-              <Text style={[styles.categoryState, system ? styles.systemText : styles.normalText]}>
-                {system ? "Categoría del sistema · Ver repuestos →" : canManage ? "Categoría editable · Ver repuestos →" : "Ver repuestos →"}
-              </Text>
-            </Pressable>
-            {!system && canManage && <View style={styles.actions}>
+              <Text style={[styles.categoryState, system ? styles.systemText : styles.normalText]}>{system ? "Categoría del sistema" : "Categoría editable"}</Text>
+            </View>
+            {!system && <View style={styles.actions}>
               <Pressable style={styles.secondaryButton} onPress={() => editCategory(category)} disabled={saving}><Text style={styles.secondaryButtonText}>Renombrar</Text></Pressable>
               <Pressable style={[styles.deleteButton, !online && styles.disabledButton]} onPress={() => remove(category)} disabled={!online || saving}><Text style={styles.deleteButtonText}>Eliminar</Text></Pressable>
             </View>}
@@ -129,11 +127,7 @@ export default function CategoriesAdminScreen() {
         })}
 
         {!isLoading && categories.length === 0 && <Text style={styles.empty}>No hay categorías en la caché local.</Text>}
-        <Text style={styles.footerNote}>
-          {canManage
-            ? "Pulsa una categoría para ver sus repuestos. Las altas, renombrados y eliminaciones se realizan siempre contra el servidor."
-            : "Pulsa una categoría para abrir el inventario filtrado por esa categoría."}
-        </Text>
+        <Text style={styles.footerNote}>Las altas, renombrados y eliminaciones se realizan siempre contra el servidor. Al eliminar una categoría, sus repuestos pasan a «Sin categoría».</Text>
       </ScrollView>
     </View>
   );
