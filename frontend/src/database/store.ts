@@ -202,6 +202,14 @@ class SqliteStore implements LocalStore {
     });
   }
 
+  async updateSessionIdentity(user: SessionUser): Promise<void> {
+    const db = await getDb();
+    await db.runAsync(
+      "UPDATE session SET username = ?, role = ?, boat_id = ? WHERE id = ?;",
+      [user.username, user.role, user.boat_id, user.id],
+    );
+  }
+
   async getSession(): Promise<SessionRow | null> {
     const db = await getDb();
     return (
