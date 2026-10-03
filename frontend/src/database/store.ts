@@ -48,6 +48,22 @@ async function removeLocalFile(path: string | null | undefined): Promise<void> {
   }
 }
 
+// Only dependency failures are automatically reactivated; an independent
+// photo upload rejection must retain its own failed state.
+async function reconcileDependentPhotos(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.execAsync(`
+    UPDATE photo_queue SET status = 'failed', last_error = 'parent_create_failed'
+    WHERE server_id IS NULL AND status IN ('pending','uploading')
+      AND EXISTS (SELECT 1 FROM pending_changes c WHERE c.row_uid = photo_queue.row_uid
+                  AND c.action = 'create' AND c.status = 'failed');
+    UPDATE photo_queue SET status = 'pending', last_error = NULL, retry_count = 0
+    WHERE status = 'failed' AND last_error = 'parent_create_failed'
+      AND (server_id IS NOT NULL OR EXISTS
+        (SELECT 1 FROM pending_changes c WHERE c.row_uid = photo_queue.row_uid
+         AND c.action = 'create' AND c.status IN ('pending','syncing')));
+  `);
+}
+
 class SqliteStore implements LocalStore {
   private initialization: Promise<void> | null = null;
   init(): Promise<void> {
@@ -196,12 +212,14 @@ class SqliteStore implements LocalStore {
         PRAGMA user_version = 4;
       `);
     }
+    await reconcileDependentPhotos(db);
   }
 
   // Called only under the process-wide sync lock, never by UI initialization.
   async recoverInterruptedSync(): Promise<void> {
     const db = await getDb();
     await db.execAsync("UPDATE pending_changes SET status = 'pending' WHERE status = 'syncing'; UPDATE photo_queue SET status = 'pending' WHERE status = 'uploading';");
+    await reconcileDependentPhotos(db);
   }
 
   // -------------------------------------------------------------- session
@@ -497,6 +515,9 @@ class SqliteStore implements LocalStore {
           await db.runAsync("UPDATE pending_changes SET payload = ?, status = 'pending', retry_count = 0, last_error = NULL WHERE queue_id = ?;", [JSON.stringify(merged), createEntry.queue_id]);
           await db.runAsync("DELETE FROM pending_changes WHERE row_uid = ? AND action = 'update';", [rowUid]);
         } else if (createEntry && (createEntry.status === 'syncing' || createEntry.retry_count > 0)) {
+          if (createEntry.status === 'failed') {
+            await db.runAsync("UPDATE pending_changes SET status = 'pending', retry_count = 1, last_error = NULL WHERE queue_id = ?;", [createEntry.queue_id]);
+          }
           await db.runAsync(
             `INSERT INTO pending_changes (queue_id, action, entity, entity_id, row_uid, client_local_id, payload, base_updated_at, created_at, retry_count, last_error, status)
              VALUES (?, 'update', 'part', NULL, ?, NULL, ?, NULL, ?, 0, NULL, 'pending');`,
@@ -528,6 +549,7 @@ class SqliteStore implements LocalStore {
           );
         }
       }
+      await reconcileDependentPhotos(db);
     });
 
     await reconcileBackgroundSync();
@@ -636,6 +658,7 @@ class SqliteStore implements LocalStore {
     await db.withTransactionAsync(async () => {
       await db.execAsync("UPDATE pending_changes SET status = 'pending', retry_count = CASE WHEN action = 'create' THEN 1 ELSE 0 END, last_error = NULL WHERE status = 'failed'; UPDATE photo_queue SET status = 'pending', retry_count = 0, last_error = NULL WHERE status = 'failed';");
       await db.execAsync("UPDATE parts SET sync_state = 'pending' WHERE row_uid IN (SELECT row_uid FROM pending_changes);");
+      await reconcileDependentPhotos(db);
     });
   }
   async discardFailed(): Promise<void> {
@@ -685,6 +708,7 @@ class SqliteStore implements LocalStore {
         );
       }
       await db.runAsync("DELETE FROM pending_changes WHERE queue_id = ?;", [queueId]);
+      await reconcileDependentPhotos(db);
     });
   }
 
@@ -743,6 +767,7 @@ class SqliteStore implements LocalStore {
         "INSERT INTO photo_queue (queue_id,row_uid,server_id,local_path,retry_count,last_error,status,created_at) VALUES (?,?,?,?,0,NULL,'pending',?);",
         [newQueueId(), rowUid, part.server_id, localPath, nowIso()],
       );
+      await reconcileDependentPhotos(db);
     });
     await reconcileBackgroundSync();
     if (previousLocalPath && previousLocalPath !== localPath) {
@@ -801,6 +826,7 @@ class SqliteStore implements LocalStore {
         [lastError, queueId],
       );
       await db.runAsync("UPDATE parts SET sync_state = 'error' WHERE row_uid = ?;", [rowUid]);
+      await reconcileDependentPhotos(db);
     });
   }
 
@@ -820,6 +846,7 @@ class SqliteStore implements LocalStore {
         if (row?.row_uid) {
           await db.runAsync("UPDATE parts SET sync_state = 'error' WHERE row_uid = ?;", [row.row_uid]);
         }
+        await reconcileDependentPhotos(db);
       });
     } else {
       await db.runAsync(

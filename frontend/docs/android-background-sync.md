@@ -134,7 +134,7 @@ real con una adaptación a SQLite de Node, el motor real con API simulada y la
 orquestación headless sin React. No equivalen a una prueba del scheduler Android.
 
 Resultado de esta implementación:
-- 23 pruebas automatizadas aprobadas: persistencia/reapertura SQLite, altas,
+- 42 pruebas automatizadas aprobadas: persistencia/reapertura SQLite, altas,
   cambios, borrado, fotos, interrupción de reclamaciones, 401/403, diez fallos de
   red de fotografías, presupuesto, serialización lógica e idempotencia tras perder
   la respuesta de una creación ya recibida por el servidor; rechazo de llamadas
@@ -188,3 +188,56 @@ adb shell am kill com.shipinventory.x6tence.app
    recuperar red sin abrir la aplicación; observar ejecución y vaciado de cola.
 9. **Force Stop:** comprobar que no se exige sync mientras está forzada; abrir otra
    vez y verificar recuperación. Repetir si procede con restricciones del fabricante.
+
+
+## Correcciones P1/P2 de la revisión del PR #2
+
+El login mantiene el bloqueo de sincronización durante toda la transición:
+respuesta de login → suspender background → retirar y confirmar retirada del token
+anterior → limpiar datos si cambia el propietario (también si no hay propietario
+conocido) → guardar metadata nueva → guardar token nuevo en SecureStore → reactivar
+background → reconciliar programación. Si falla la retirada, no se modifica SQLite.
+La versión instalada de SecureStore confirma escritura y retirada Android mediante
+`SharedPreferences.commit()`, comprobado en su fuente; no se añadió código nativo.
+
+| Momento de interrupción | Estado restaurable |
+|---|---|
+| Antes de retirar el token anterior | Token A, metadata y colas A |
+| Después de retirarlo | Sin token, metadata/colas A |
+| Durante la limpieza SQLite | Sin token; SQLite confirma o revierte su transacción |
+| Tras limpiar los datos | Sin token ni datos antiguos |
+| Después de guardar metadata B / antes de guardar token B | Metadata B sin token |
+| Después de guardar token B / antes de resumeAuth | Token y metadata B; sin colas A; background suspendido |
+
+`restore()` comparte el bloqueo y no publica credenciales sin metadata. `logout()`
+retira el token pero conserva el propietario no secreto del inventario retenido:
+ese propietario no constituye una sesión autenticada. Así un login posterior de
+B reconoce y limpia los datos A. `runSync()` llama a `/api/me` antes de cualquier
+push/subida y compara su ID con la sesión SQLite; una discrepancia termina como
+error de autenticación sin procesar ninguna cola. Errores de red de esta validación
+conservan el trabajo. La suspensión condicional de un token rechazado está dentro
+del repositorio, evitando bloqueos anidados y la suspensión de un login posterior.
+
+Las fotos sin ID remoto cuyo CREATE termina failed (rechazo definitivo o máximo
+de reintentos) pasan a `failed`, con marcador `parent_create_failed`, **en la misma
+transacción** que el padre. Siguen presentes en SQLite y en disco, pero dejan de
+contar como trabajo reintentable. Adjuntar una foto a un padre ya fallido aplica
+el mismo estado; inicialización/recuperación reparan el estado escrito por versiones
+anteriores. Corregir o reintentar el CREATE reactiva sus fotos dependientes; su
+confirmación asigna el ID remoto y permite subirlas. Las fotos fallidas por errores
+propios de subida no se reactivan incidentalmente. `discardFailed()` conserva su
+limpieza explícita de filas y archivos.
+
+Al corregir un CREATE cuyo resultado pudo perderse (máximo de reintentos), se
+conservan el payload original y `client_local_id`; la edición se difiere hasta
+confirmar el alta idempotente. Así se recuperan padre y foto sin alterar el alta
+que el servidor podría haber recibido previamente.
+
+Regresiones: 42 tests aprobados, incluyendo snapshots de todos los límites de
+persistencia del login, restauración headless de cada snapshot, rollback real de
+SQLite, logout/cambio de usuario, falla al retirar credenciales, metadata antigua
+sin propietario, discrepancia de `/api/me`, red/401 en su validación, suspensión
+antigua tras nuevo login, invalid/forbidden/MAX_RETRIES con foto, corrección,
+reintento, reparación de estado legado y descarte. Estos tests usan SQLite real y
+SecureStore/API simulados; no equivalen a matar un proceso Android físico en cada
+instrucción. Kotlin/WorkManager, backend, permisos y UI no se modificaron.

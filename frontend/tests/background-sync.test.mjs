@@ -64,6 +64,9 @@ async function fixture(t) {
   const server = new Map();
   const events = [];
   let failure = null;
+  let pushStatus = "ok";
+  let identityId = 1;
+  let identityError = null;
   let loseResponse = false;
   let photoFailure = null;
   let lockTail = Promise.resolve();
@@ -92,6 +95,7 @@ async function fixture(t) {
         },
       },
       '@/src/services/api/endpoints': {
+        apiGetMe: async () => { if (identityError) throw identityError; return { id: identityId }; },
         apiPush: async (_token, [change]) => {
           events.push(change.action);
           if (failure) throw failure;
@@ -101,7 +105,7 @@ async function fixture(t) {
             id = server.get(change.local_id).id;
           }
           if (loseResponse) { loseResponse = false; throw new ApiError(0, 'network'); }
-          return { ok: true, results: [{ action: change.action, id, local_id: change.local_id, status: 'ok', updated_at: '2026-10-03T12:00:00Z' }] };
+          return { ok: true, results: [{ action: change.action, id, local_id: change.local_id, status: pushStatus, updated_at: '2026-10-03T12:00:00Z' }] };
         },
         apiGetSync: async () => ({ server_time: '2026-10-03T12:00:00Z', parts: [...server.values()].map(p => ({ ...p, boat_id: 1, quantity: 1, deleted_at: null })) }),
         apiGetBoats: async () => [], apiGetUsers: async () => [], apiGetCategories: async () => [],
@@ -110,10 +114,11 @@ async function fixture(t) {
   }
   t.after(() => { for (const db of handles) db.close(); rmSync(dir, { recursive: true, force: true }); });
   return {
-    get store() { return localStore; }, engine, openStore, files, events, server,
+    get store() { return localStore; }, engine, openStore, files, events, server, file,
     create: id => localStore.createPartLocal({ local_id: id, boat_id: 1, name: 'pump', quantity: 1 }),
     get scheduled() { return scheduled; },
     fail: error => { failure = error; }, photoFail: error => { photoFailure = error; },
+    pushStatus: status => { pushStatus = status; }, identity: id => { identityId = id; }, identityFail: error => { identityError = error; },
     loseResponse: () => { loseResponse = true; },
   };
 }
@@ -274,10 +279,204 @@ for (const scenario of ['secure-write-failure', 'metadata-write-failure']) {
       '@/src/database/store': { localStore: {
         getSession: async () => user,
         clearUserData: async () => events.push('clear-data'),
-        saveSession: async () => { throw new Error('SQLite write failed'); },
+        saveSession: async () => { if (scenario === 'metadata-write-failure') throw new Error('SQLite write failed'); },
       } },
     });
     await assert.rejects(sessionRepository.login('mechanic', 'password'));
     assert.deepEqual(events, ['pause']); assert.equal(token, null);
   });
 }
+
+for (const reason of ['invalid', 'forbidden', 'max-retries']) {
+  test(`P2 photo stops retries for ${reason} and survives explicit retry`, async t => {
+    const f = await fixture(t); const part = await f.create(`dependent-${reason}`);
+    await f.store.setLocalPhoto(part.row_uid, 'photo.jpg');
+    if (reason === 'max-retries') {
+      f.fail(new ApiError(500, 'http'));
+      for (let i = 0; i < 5; i++) await f.engine().runSync('token');
+    } else { f.pushStatus(reason); await f.engine().runSync('token'); }
+    assert.equal(await f.store.getPendingCount(), 0);
+    const failed = await f.store.getFailedChanges(); assert.equal(failed.length, 2);
+    assert.equal(failed.find(entry => entry.local_path)?.last_error, 'parent_create_failed');
+    assert.ok(f.files.has('photo.jpg'));
+    const result = await executeBackgroundSync({
+      initialize: async () => {}, restore: async () => ({ token: 'token', session: { id: 1 } }),
+      pendingCount: () => f.store.getPendingCount(), sync: () => { throw new Error('must not retry'); }, suspendAuth: async () => {},
+    });
+    assert.equal(result, 'done');
+    await f.openStore().init(); assert.equal(await f.store.getPendingCount(), 0);
+    await f.store.retryFailed(); assert.equal(await f.store.getPendingCount(), 2);
+    f.fail(null); f.pushStatus('ok'); await f.engine().runSync('token');
+    assert.equal(await f.store.getPendingCount(), 0); assert.equal(f.events.at(-1), 'photo:100');
+  });
+  test(`P2 editing ${reason} CREATE reactivates its retained photograph`, async t => {
+    const f = await fixture(t); const part = await f.create(`edit-${reason}`);
+    await f.store.setLocalPhoto(part.row_uid, 'photo.jpg');
+    const [entry] = await f.store.getPendingChanges();
+    if (reason === 'max-retries') {
+      for (let i = 0; i < 5; i++) await f.store.markRetry(entry.queue_id, 'HTTP 500');
+    } else await f.store.markFailed(entry.queue_id, part.row_uid, reason);
+    await f.store.updatePartLocal(part.row_uid, { name: 'corrected' });
+    assert.ok(await f.store.getPendingCount() >= 2);
+    assert.equal((await f.store.getPendingPhotos())[0].status, 'pending');
+    await f.engine().runSync('token');
+    assert.equal(f.events.at(-1), 'photo:100'); assert.equal(await f.store.getPendingCount(), 0);
+  });
+}
+test('P2 attaching a photo on a failed parent stays failed; discard cleans file', async t => {
+  const f = await fixture(t); const part = await f.create('already-failed');
+  const [entry] = await f.store.getPendingChanges(); await f.store.markFailed(entry.queue_id, part.row_uid, 'invalid');
+  await f.store.setLocalPhoto(part.row_uid, 'photo.jpg');
+  assert.equal(await f.store.getPendingCount(), 0); assert.ok(f.files.has('photo.jpg'));
+  await f.store.discardFailed(); assert.equal((await f.store.getFailedChanges()).length, 0);
+  assert.equal(await f.store.getPart(part.row_uid), null); assert.equal(f.files.has('photo.jpg'), false);
+});
+test('P2 cold initialization repairs legacy pending photos of a failed CREATE', async t => {
+  const f = await fixture(t); const part = await f.create('legacy-photo');
+  await f.store.setLocalPhoto(part.row_uid, 'photo.jpg');
+  const [entry] = await f.store.getPendingChanges(); await f.store.markFailed(entry.queue_id, part.row_uid, 'forbidden');
+  const db = new DatabaseSync(f.file); db.exec("UPDATE photo_queue SET status = 'pending', last_error = NULL;"); db.close();
+  await f.openStore().init(); assert.equal(await f.store.getPendingCount(), 0); assert.ok(f.files.has('photo.jpg'));
+});
+test('P1 server identity mismatch cannot push operations or upload photos, including legacy state', async t => {
+  const f = await fixture(t); const part = await f.create('identity-mismatch');
+  await f.store.setLocalPhoto(part.row_uid, 'photo.jpg'); f.identity(2);
+  assert.equal((await f.engine().runSync('token')).authError, true);
+  assert.deepEqual(f.events, []); assert.equal(await f.store.getPendingCount(), 2);
+});
+
+async function sessionFixture(f, hooks = {}) {
+  let token = 'token-A';
+  const userB = { id: 2, username: 'user-B', role: 'mechanic', boat_id: 2 };
+  const snapshots = [];
+  const snapshot = async boundary => {
+    snapshots.push({ boundary, token, session: await f.store.getSession(),
+      pending: await f.store.getPendingCount(), cached: (await f.store.getCounts()).parts });
+  };
+  const repository = load('src/repositories/sessionRepository.ts', {
+    '@/src/services/sync/nativeBackground': { withSyncLock: fn => fn(), backgroundBridge: {
+      suspendAuth: async () => snapshot('before-token-removal'),
+      resumeAuth: async () => snapshot('before-resume-auth'),
+    } },
+    '@/src/services/sync/backgroundScheduling': { reconcileBackgroundSync: async () => {} },
+    '@/src/utils/storage': { storage: {
+      secureGet: async () => token,
+      secureRemove: async () => {
+        if (hooks.failRemoval) return false;
+        token = null; await snapshot('after-token-removal'); return true;
+      },
+      secureSet: async (_key, value) => {
+        await snapshot('before-new-token'); token = value; await snapshot('after-new-token'); return true;
+      },
+    } },
+    '@/src/constants/storage': { TOKEN_KEY: 'existing-key' },
+    '@/src/services/api/endpoints': { apiLogin: async () => ({ token: 'token-B', user: userB }) },
+    '@/src/database/store': { localStore: {
+      getSession: () => f.store.getSession(),
+      clearUserData: async () => { await snapshot('during-clear-before-commit'); await f.store.clearUserData(); await snapshot('after-clear'); },
+      saveSession: async user => { await f.store.saveSession(user); await snapshot('after-new-metadata'); },
+    } },
+  }).sessionRepository;
+  return { repository, snapshots, snapshot, get token() { return token; } };
+}
+test('P1 every persisted login boundary binds credentials only to their own SQLite owner', async t => {
+  const f = await fixture(t); const part = await f.create('p1-old');
+  await f.store.setLocalPhoto(part.row_uid, 'photo.jpg');
+  const auth = await sessionFixture(f); await auth.repository.login('user-B', 'password');
+  assert.deepEqual(auth.snapshots.map(s => s.boundary), [
+    'before-token-removal', 'after-token-removal', 'during-clear-before-commit', 'after-clear',
+    'after-new-metadata', 'before-new-token', 'after-new-token', 'before-resume-auth',
+  ]);
+  for (const state of auth.snapshots) {
+    if (state.token === 'token-A') assert.equal(state.session.id, 1);
+    if (state.token === 'token-B') { assert.equal(state.session.id, 2); assert.equal(state.pending, 0); assert.equal(state.cached, 0); }
+    let sends = 0;
+    const restored = load('src/repositories/sessionRepository.ts', {
+      '@/src/services/sync/nativeBackground': { withSyncLock: fn => fn() },
+      '@/src/services/sync/backgroundScheduling': {},
+      '@/src/utils/storage': { storage: { secureGet: async () => state.token } },
+      '@/src/constants/storage': { TOKEN_KEY: 'existing-key' },
+      '@/src/services/api/endpoints': {},
+      '@/src/database/store': { localStore: { getSession: async () => state.session } },
+    }).sessionRepository;
+    await executeBackgroundSync({
+      initialize: async () => {}, restore: () => restored.restore(), pendingCount: async () => state.pending,
+      sync: async credential => { assert.equal(credential, 'token-A'); sends++; return { authError: false }; },
+      suspendAuth: async () => {},
+    });
+    if (state.token !== 'token-A') assert.equal(sends, 0, state.boundary);
+  }
+});
+test('P1 interrupted SQLite clear rolls back while credentials remain absent', async t => {
+  const f = await fixture(t); await f.create('p1-rollback');
+  // SQLite rolls an uncommitted transaction back on connection/process death.
+  const db = new DatabaseSync(f.file); db.exec('BEGIN; DELETE FROM pending_changes; DELETE FROM parts;'); db.close();
+  await f.openStore().init(); assert.equal((await f.store.getSession()).id, 1);
+  assert.equal(await f.store.getPendingCount(), 1);
+  assert.equal(await executeBackgroundSync({ initialize: async () => {},
+    restore: async () => ({ token: null, session: await f.store.getSession() }),
+    pendingCount: () => f.store.getPendingCount(), sync: () => { throw new Error('unsafe send'); }, suspendAuth: async () => {},
+  }), 'auth');
+});
+test('P1 failed credential removal aborts before changing identity or queues', async t => {
+  const f = await fixture(t); await f.create('remove-failed');
+  const auth = await sessionFixture(f, { failRemoval: true });
+  await assert.rejects(auth.repository.login('user-B', 'password'), /retirar/);
+  assert.equal(auth.token, 'token-A'); assert.equal((await f.store.getSession()).id, 1);
+  assert.equal(await f.store.getPendingCount(), 1);
+});
+test('P1 logout retains queue ownership so a subsequent other-user login clears it safely', async t => {
+  const f = await fixture(t); await f.create('logout-old'); const auth = await sessionFixture(f);
+  await auth.repository.logout();
+  assert.equal(auth.token, null); assert.equal((await f.store.getSession()).id, 1);
+  assert.equal(await f.store.getPendingCount(), 1); assert.equal((await auth.repository.restore()).token, null);
+  await auth.repository.login('user-B', 'password');
+  assert.equal((await f.store.getSession()).id, 2); assert.equal(await f.store.getPendingCount(), 0);
+});
+
+for (const [status, kind, flag] of [[0, 'network', 'networkError'], [401, 'http', 'authError']]) {
+  test(`P1 identity validation ${kind} failure preserves both queues`, async t => {
+    const f = await fixture(t); const part = await f.create(`identity-check-${kind}`);
+    await f.store.setLocalPhoto(part.row_uid, 'photo.jpg'); f.identityFail(new ApiError(status, kind));
+    assert.equal((await f.engine().runSync('token'))[flag], true);
+    assert.deepEqual(f.events, []); assert.equal(await f.store.getPendingCount(), 2);
+    assert.ok(f.files.has('photo.jpg'));
+  });
+}
+test('P1 legacy inventory with no owner is cleared before publishing a new credential', async t => {
+  const f = await fixture(t); await f.create('unowned-legacy'); await f.store.clearSession();
+  const auth = await sessionFixture(f);
+  assert.equal((await auth.repository.restore()).token, null);
+  await auth.repository.login('user-B', 'password');
+  assert.equal(await f.store.getPendingCount(), 0); assert.equal((await f.store.getSession()).id, 2);
+  assert.equal(auth.token, 'token-B');
+});
+test('P1 a stale authentication failure cannot suspend a freshly completed login', async t => {
+  const f = await fixture(t); const auth = await sessionFixture(f);
+  await auth.repository.login('user-B', 'password'); const count = auth.snapshots.length;
+  await auth.repository.suspendIfCurrentToken('token-A'); assert.equal(auth.snapshots.length, count);
+});
+
+test('P2 correcting a retry-exhausted CREATE after a lost acknowledgment preserves idempotency and photo', async t => {
+  const f = await fixture(t); const part = await f.create('uncertain-create');
+  await f.store.setLocalPhoto(part.row_uid, 'photo.jpg'); f.loseResponse(); await f.engine().runSync('token');
+  f.fail(new ApiError(500, 'http')); for (let i = 0; i < 4; i++) await f.engine().runSync('token');
+  assert.equal(await f.store.getPendingCount(), 0); assert.equal(f.server.size, 1);
+  await f.store.updatePartLocal(part.row_uid, { name: 'corrected' });
+  const queued = await f.store.getPendingChanges();
+  assert.equal(JSON.parse(queued.find(c => c.action === 'create').payload).name, 'pump');
+  assert.equal(JSON.parse(queued.find(c => c.action === 'update').payload).name, 'corrected');
+  f.fail(null); await f.engine().runSync('token');
+  assert.equal(f.server.size, 1); assert.equal(await f.store.getPendingCount(), 0);
+  assert.equal(f.events.at(-1), 'photo:100');
+});
+test('P2 dependency repair does not reactivate a photo failed by its own upload errors', async t => {
+  const f = await fixture(t); const part = await f.create('upload-failed');
+  await f.store.setLocalPhoto(part.row_uid, 'photo.jpg'); f.photoFail(new ApiError(500, 'http'));
+  for (let i = 0; i < 5; i++) await f.engine().runSync('token');
+  assert.equal((await f.store.getFailedChanges()).length, 1);
+  await f.store.updatePartLocal(part.row_uid, { name: 'edited' });
+  assert.equal((await f.store.getPendingPhotos()).length, 0); assert.ok(f.files.has('photo.jpg'));
+  await f.store.retryFailed(); f.photoFail(null); await f.engine().runSync('token');
+  assert.equal(await f.store.getPendingCount(), 0); assert.equal((await f.store.getFailedChanges()).length, 0);
+});

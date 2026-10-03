@@ -11,7 +11,7 @@ import { initializeServerConfig } from "@/src/services/serverConfig";
 
 import { ApiError } from "@/src/services/api/client";
 import { photoExists, uploadPartPhoto } from "@/src/services/photos/photoService";
-import { apiGetBoats, apiGetCategories, apiGetSync, apiGetUsers, apiPush } from "@/src/services/api/endpoints";
+import { apiGetMe, apiGetBoats, apiGetCategories, apiGetSync, apiGetUsers, apiPush } from "@/src/services/api/endpoints";
 import { localStore } from "@/src/database/store";
 import { LocalPart, Part, PendingChange, PushChange, PushResult } from "@/src/types";
 
@@ -134,13 +134,17 @@ async function applyOk(entry: PendingChange, res: PushResult): Promise<void> {
   }
 }
 
-async function processQueue(token: string, deadline = Infinity): Promise<SyncSummary> {
-  const summary: SyncSummary = {
+function emptySummary(): SyncSummary {
+  return {
     pushed: 0, ok: 0, conflicts: 0, failed: 0, notFound: 0,
     authError: false, networkError: false, serverError: false, diagnostics: null,
     receivedParts: 0, receivedActiveParts: 0, receivedDeletedParts: 0, cachedParts: 0,
     protectedIds: [], missingActiveIds: [],
   };
+}
+
+async function processQueue(token: string, deadline = Infinity): Promise<SyncSummary> {
+  const summary = emptySummary();
 
   const pending = await localStore.getPendingChanges();
   console.info("[SYNC] queue before", {
@@ -489,6 +493,25 @@ export async function runSync(token: string, options: { deadline?: number } = {}
     // A queued foreground call must not use an old identity after logout/login.
     if (!await localStore.getSession() || await storage.secureGet(TOKEN_KEY, "") !== token) {
       throw new Error("La sesión ha cambiado antes de sincronizar.");
+    }
+    const session = (await localStore.getSession())!;
+    try {
+      const identity = await apiGetMe(token);
+      if (identity.id !== session.id) {
+        return { ...emptySummary(), authError: true };
+      }
+    } catch (error) {
+      const summary = emptySummary();
+      if (error instanceof ApiError) {
+        summary.authError = error.status === 401 || error.status === 403;
+        summary.networkError = error.kind === "network" || error.kind === "timeout";
+        summary.serverError = !summary.authError && !summary.networkError;
+        summary.diagnostics = errorDiag(error, "/api/me", "GET");
+      } else {
+        summary.serverError = true;
+        summary.diagnostics = unknownDiag(error, "/api/me", "GET");
+      }
+      return summary;
     }
     await localStore.recoverInterruptedSync();
     try { return await runSyncPass(token, options.deadline ?? Infinity); }
