@@ -1,3 +1,9 @@
+import { withSyncLock } from "./nativeBackground";
+import { reconcileBackgroundSync } from "./backgroundScheduling";
+import { storage } from "@/src/utils/storage";
+import { TOKEN_KEY } from "@/src/constants/storage";
+import { initializeServerConfig } from "@/src/services/serverConfig";
+
 // Sync Engine.
 // Pushes pending changes, then pulls either the initial full snapshot or an
 // incremental /api/sync?since=<last_server_time> delta and reconciles it with
@@ -128,7 +134,7 @@ async function applyOk(entry: PendingChange, res: PushResult): Promise<void> {
   }
 }
 
-async function processQueue(token: string): Promise<SyncSummary> {
+async function processQueue(token: string, deadline = Infinity): Promise<SyncSummary> {
   const summary: SyncSummary = {
     pushed: 0, ok: 0, conflicts: 0, failed: 0, notFound: 0,
     authError: false, networkError: false, serverError: false, diagnostics: null,
@@ -153,7 +159,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
   let errDiag: SyncDiagnostics | null = null;
 
   const attempted = new Set<string>();
-  for (;;) {
+  for (; Date.now() < deadline;) {
     const candidate = (await localStore.getPendingChanges()).find((e) => e.status === "pending" && !attempted.has(e.queue_id));
     if (!candidate) break;
     attempted.add(candidate.queue_id);
@@ -274,9 +280,10 @@ async function processQueue(token: string): Promise<SyncSummary> {
   return summary;
 }
 
-async function processPhotoQueue(token: string, summary: SyncSummary): Promise<void> {
+async function processPhotoQueue(token: string, summary: SyncSummary, deadline = Infinity): Promise<void> {
   const photos = await localStore.getPendingPhotos();
   for (const candidate of photos) {
+    if (Date.now() >= deadline) break;
     const photo = await localStore.claimPhoto(candidate.queue_id);
     if (!photo || photo.server_id == null) continue;
     const exists = await photoExists(photo.local_path);
@@ -306,12 +313,12 @@ async function processPhotoQueue(token: string, summary: SyncSummary): Promise<v
         summary.diagnostics = summary.diagnostics ?? d;
         if (e.status === 401 || e.status === 403) {
           summary.authError = true;
-          await localStore.markPhotoRetry(photo.queue_id, "Sesión no autorizada");
+          await localStore.revertPhotoUploading(photo.queue_id);
           return;
         }
         if (e.kind === "network" || e.kind === "timeout") {
           summary.networkError = true;
-          await localStore.markPhotoRetry(photo.queue_id, "Sin conexión");
+          await localStore.revertPhotoUploading(photo.queue_id);
           return;
         }
         summary.serverError = true;
@@ -411,8 +418,8 @@ export async function pullAndReconcile(token: string): Promise<Pick<SyncSummary,
   };
 }
 
-export async function runSync(token: string): Promise<SyncSummary> {
-  const summary = await processQueue(token);
+async function runSyncPass(token: string, deadline: number): Promise<SyncSummary> {
+  const summary = await processQueue(token, deadline);
   if (summary.authError || summary.networkError) return summary;
 
   // Inventory reconciliation must not be blocked by an independent photo
@@ -434,6 +441,7 @@ export async function runSync(token: string): Promise<SyncSummary> {
   }
 
   try {
+    if (Date.now() >= deadline) return summary;
     const syncStats = await pullAndReconcile(token);
     summary.receivedParts = syncStats.receivedParts;
     summary.receivedActiveParts = syncStats.receivedActiveParts;
@@ -456,7 +464,7 @@ export async function runSync(token: string): Promise<SyncSummary> {
     }
   }
   if (!summary.authError && !summary.networkError) {
-    await processPhotoQueue(token, summary);
+    await processPhotoQueue(token, summary, deadline);
   }
 
   const failures = await localStore.getFailedChanges();
@@ -470,4 +478,20 @@ export async function runSync(token: string): Promise<SyncSummary> {
     };
   }
   return summary;
+}
+
+// Both UI and TaskManager use this entry point. The native mutex spans separate
+// JS runtimes, protecting push/reconciliation and crash recovery from overlap.
+export async function runSync(token: string, options: { deadline?: number } = {}): Promise<SyncSummary> {
+  return withSyncLock(async () => {
+    await localStore.init();
+    await initializeServerConfig();
+    // A queued foreground call must not use an old identity after logout/login.
+    if (!await localStore.getSession() || await storage.secureGet(TOKEN_KEY, "") !== token) {
+      throw new Error("La sesión ha cambiado antes de sincronizar.");
+    }
+    await localStore.recoverInterruptedSync();
+    try { return await runSyncPass(token, options.deadline ?? Infinity); }
+    finally { await reconcileBackgroundSync(); }
+  });
 }

@@ -3,6 +3,8 @@
 // local mutations write the part row and its pending_changes entry inside one
 // transaction so an operation can never be lost mid-write.
 
+import { reconcileBackgroundSync } from "@/src/services/sync/backgroundScheduling";
+
 import * as SQLite from "expo-sqlite";
 import * as FileSystem from "expo-file-system/legacy";
 
@@ -47,7 +49,15 @@ async function removeLocalFile(path: string | null | undefined): Promise<void> {
 }
 
 class SqliteStore implements LocalStore {
-  async init(): Promise<void> {
+  private initialization: Promise<void> | null = null;
+  init(): Promise<void> {
+    this.initialization ??= this.initialize().catch((error) => {
+      this.initialization = null;
+      throw error;
+    });
+    return this.initialization;
+  }
+  private async initialize(): Promise<void> {
     const db = await getDb();
 
     await db.execAsync(`
@@ -186,8 +196,12 @@ class SqliteStore implements LocalStore {
         PRAGMA user_version = 4;
       `);
     }
-    // Recover any operation left mid-flight by a previous crash/close.
-    await db.runAsync("UPDATE pending_changes SET status = 'pending' WHERE status = 'syncing';");
+  }
+
+  // Called only under the process-wide sync lock, never by UI initialization.
+  async recoverInterruptedSync(): Promise<void> {
+    const db = await getDb();
+    await db.execAsync("UPDATE pending_changes SET status = 'pending' WHERE status = 'syncing'; UPDATE photo_queue SET status = 'pending' WHERE status = 'uploading';");
   }
 
   // -------------------------------------------------------------- session
@@ -442,6 +456,7 @@ class SqliteStore implements LocalStore {
       );
     });
 
+    await reconcileBackgroundSync();
     return (await this.getPart(rowUid))!;
   }
 
@@ -515,6 +530,7 @@ class SqliteStore implements LocalStore {
       }
     });
 
+    await reconcileBackgroundSync();
     return this.getPart(rowUid);
   }
 
@@ -557,6 +573,7 @@ class SqliteStore implements LocalStore {
       }
     });
 
+    await reconcileBackgroundSync();
     await removeLocalFile(localPhotoPath);
   }
 
@@ -727,6 +744,7 @@ class SqliteStore implements LocalStore {
         [newQueueId(), rowUid, part.server_id, localPath, nowIso()],
       );
     });
+    await reconcileBackgroundSync();
     if (previousLocalPath && previousLocalPath !== localPath) {
       const inFlight = await db.getFirstAsync("SELECT queue_id FROM photo_queue WHERE local_path = ? AND status = 'uploading';", [previousLocalPath]);
       if (!inFlight) await removeLocalFile(previousLocalPath);
@@ -755,6 +773,11 @@ class SqliteStore implements LocalStore {
     });
     await removeLocalFile(localPath);
   }
+  async revertPhotoUploading(queueId: string): Promise<void> {
+    const db = await getDb();
+    await db.runAsync("UPDATE photo_queue SET status = 'pending' WHERE queue_id = ? AND status = 'uploading';", [queueId]);
+  }
+
   async markPhotoRetry(queueId: string, lastError: string): Promise<void> {
     const db = await getDb();
     const row = await db.getFirstAsync<{ retry_count: number }>("SELECT retry_count FROM photo_queue WHERE queue_id = ?;", [queueId]);

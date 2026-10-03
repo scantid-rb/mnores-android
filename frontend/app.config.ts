@@ -73,7 +73,7 @@ const config: ExpoConfig = {
                 buildArchs: ["arm64-v8a"],
               },
             },
-          ],
+          ] as [string, { android: { buildArchs: string[] } }],
         ]
       : []),
   ],

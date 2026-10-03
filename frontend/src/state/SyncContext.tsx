@@ -3,6 +3,8 @@
 // Triggers a sync pass on app start (if online), on connectivity regain, and
 // on demand. It does not block the inventory while the queue is processed.
 
+import { AppState } from "react-native";
+import { reconcileBackgroundSync } from "@/src/services/sync/backgroundScheduling";
 import React, {
   createContext,
   useCallback,
@@ -83,8 +85,10 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const prevOnline = useRef(online);
 
   const refreshPending = useCallback(async () => {
+    await localStore.init();
     setPendingCount(await localStore.getPendingCount());
     setFailedCount((await localStore.getFailedChanges()).length);
+    await reconcileBackgroundSync();
   }, []);
 
   const syncNow = useCallback(async () => {
@@ -171,6 +175,17 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     if (online && !prevOnline.current && token) void syncNow();
     prevOnline.current = online;
   }, [online, token, syncNow]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active") return;
+      invalidateInventory();
+      void refreshSession();
+      void refreshPending();
+      if (token && online) void syncNow();
+    });
+    return () => subscription.remove();
+  }, [token, online, syncNow, refreshSession, refreshPending]);
 
   const retryFailed = useCallback(async () => {
     if (running.current) return;

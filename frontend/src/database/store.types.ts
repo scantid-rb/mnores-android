@@ -19,6 +19,7 @@ import {
 
 export interface LocalStore {
   init(): Promise<void>;
+  recoverInterruptedSync(): Promise<void>;
 
   // Session metadata (never the token/password).
   saveSession(user: SessionUser): Promise<void>;
@@ -51,6 +52,7 @@ export interface LocalStore {
   getPendingPhotos(): Promise<PendingPhoto[]>;
   applyPhotoServerId(rowUid: string, serverId: number): Promise<void>;
   applyPhotoOk(queueId: string, serverUpdatedAt: string): Promise<void>;
+  revertPhotoUploading(queueId: string): Promise<void>;
   markPhotoRetry(queueId: string, lastError: string): Promise<void>;
 
   // Sync queue.

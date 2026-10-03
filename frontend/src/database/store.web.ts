@@ -60,6 +60,8 @@ class WebStore implements LocalStore {
     return readJson<PendingChange[]>(K.queue, []);
   }
 
+  async recoverInterruptedSync(): Promise<void> { await this.init(); }
+
   async init(): Promise<void> {
     const q = await this.queue();
     let changed = false;
@@ -438,6 +440,13 @@ class WebStore implements LocalStore {
     await writeJson(K.parts, parts);
     await writeJson(K.photos, (await readJson<PendingPhoto[]>(K.photos, [])).filter((p) => p.row_uid !== rowUid));
   }
+  async revertPhotoUploading(queueId: string): Promise<void> {
+    const photos = await readJson<PendingPhoto[]>(K.photos, []);
+    const photo = photos.find((item) => item.queue_id === queueId);
+    if (photo?.status === "uploading") photo.status = "pending";
+    await writeJson(K.photos, photos);
+  }
+
   async markPhotoRetry(queueId: string, lastError: string): Promise<void> {
     const q = await readJson<PendingPhoto[]>(K.photos, []);
     const p = q.find((x) => x.queue_id === queueId);

@@ -59,7 +59,6 @@ export interface Part {
   quantity: number;
   notes: string | null;
   photo_path: string | null;
-  local_photo_path: string | null;
   updated_at: string | null;
   deleted_at?: string | null;
 }
@@ -107,6 +106,7 @@ export interface LocalPart {
   quantity: number;
   notes: string | null;
   photo_path: string | null;
+  local_photo_path: string | null;
   updated_at: string | null;
   deleted_at: string | null;
   pending_delete: number;

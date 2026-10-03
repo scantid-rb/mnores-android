@@ -4,6 +4,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
+import { backgroundBridge } from "@/src/services/sync/nativeBackground";
 import { queryClient } from "@/src/query-client";
 import { localStore } from "@/src/database/store";
 import { initializeServerConfig, setServerUrl } from "@/src/services/serverConfig";
@@ -50,6 +51,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setSession(restored.session);
       setCacheAvailable(counts.parts > 0);
       if (restored.session && restored.token) {
+        await backgroundBridge?.resumeAuth();
+        if (!mounted) return;
         setUser({
           id: restored.session.id,
           username: restored.session.username,
