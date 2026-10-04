@@ -3144,14 +3144,7 @@ expo-build-properties@~57.0.22:
     resolve-from "^5.0.0"
     semver "^7.6.0"
 
-expo-constants@~57.0.19:
-  version "57.0.19"
-  resolved "https://registry.yarnpkg.com/expo-constants/-/expo-constants-57.0.19.tgz#9df45e23672342f44f12f290399d95097af738c6"
-  integrity sha512-3eK1kZRwCdMizQLlM/PPlPwjaPnB5qKvdRDMBMnB1ZxmvWJBf9TB4uEO4DMMfIPaFUxYFs29dsR5fPr1gh3FTQ==
-  dependencies:
-    "@expo/env" "~2.4.3"
-
-expo-constants@~57.0.20:
+expo-constants@57.0.20, expo-constants@~57.0.19, expo-constants@~57.0.20:
   version "57.0.20"
   resolved "https://registry.yarnpkg.com/expo-constants/-/expo-constants-57.0.20.tgz#d8691eccf44282f230a60b5f415b2d94cf7b9be0"
   integrity sha512-WycPVvBgbluSa6yAh6DKnX646ZHrae0gV2ZLum5fioNkR+DiWyulq1+UfS++Jc6yfAh/l55NOirv6mt5cnQhSw==
@@ -3258,6 +3251,12 @@ expo-modules-jsi@~57.1.1:
   resolved "https://registry.yarnpkg.com/expo-modules-jsi/-/expo-modules-jsi-57.1.1.tgz#0821e42a6a7b1b962cb14416889107481182f62b"
   integrity sha512-ssnwz3ZuIgCbZj5A3J6NlhQrXZojg+BjkeWrOWqVJhyMHlV/A/cRT7s986chKku97BFt6ucmDu6/BCzrV45Wcw==
 
+expo-navigation-bar@~57.0.3:
+  version "57.0.3"
+  resolved "https://registry.yarnpkg.com/expo-navigation-bar/-/expo-navigation-bar-57.0.3.tgz"
+  dependencies:
+    debug "^4.3.2"
+
 expo-router@~57.0.24:
   version "57.0.24"
   resolved "https://registry.yarnpkg.com/expo-router/-/expo-router-57.0.24.tgz#169b8b0c92c6381bc13b3ce360d7528845cf7294"
@@ -3346,6 +3345,13 @@ expo-system-ui@57.0.4:
   dependencies:
     "@react-native/normalize-colors" "0.86.3"
     debug "^4.3.2"
+
+expo-task-manager@~57.0.21:
+  version "57.0.21"
+  resolved "https://registry.yarnpkg.com/expo-task-manager/-/expo-task-manager-57.0.21.tgz#ace56e4367c934158dff23839c37f243e5214291"
+  integrity sha512-uZ6pHgwCOTZCUlcfIoRGa/SdQJDNm5Hwly7NFuWNscZT8/NgF1geJfXOyuC7V8j9T/mlzfB5h5ZpRP/Hl6X14g==
+  dependencies:
+    unimodules-app-loader "~57.0.2"
 
 expo-web-browser@57.0.3:
   version "57.0.3"
@@ -6275,6 +6281,11 @@ unicode-property-aliases-ecmascript@^2.0.0:
   version "2.2.0"
   resolved "https://registry.yarnpkg.com/unicode-property-aliases-ecmascript/-/unicode-property-aliases-ecmascript-2.2.0.tgz#301d4f8a43d2b75c97adfad87c9dd5350c9475d1"
   integrity sha512-hpbDzxUY9BFwX+UeBnxv3Sh1q7HFxj48DTmXchNgRa46lO8uj3/1iEn3MiNUYTg1g9ctIqXCCERn8gYZhHC5lQ==
+
+unimodules-app-loader@~57.0.2:
+  version "57.0.2"
+  resolved "https://registry.yarnpkg.com/unimodules-app-loader/-/unimodules-app-loader-57.0.2.tgz#950a025d13c71c6202069447c10466dcba606001"
+  integrity sha512-1Ja+r1VR556m1cTn4BBwAe0AQpX8mDobvN+6Kx12h0jqf0euHfvkPHg83ijuC7pWHff9vTOUc7qr5t8vnmnljg==
 
 unpipe@~1.0.0:
   version "1.0.0"

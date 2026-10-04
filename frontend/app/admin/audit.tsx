@@ -284,7 +284,7 @@ const useStyles = makeStyles((colors) => ({
   actor: { fontSize: 13, fontWeight: "700", color: colors.brandPrimary },
   object: { fontSize: 12, color: colors.onSurfaceSecondary },
   modalOverlay: { flex: 1, justifyContent: "flex-end" },
-  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
+  modalBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.45)" },
   modalSheet: { maxHeight: "82%", backgroundColor: colors.surfaceSecondary, borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 18, paddingTop: 10, paddingBottom: 24, borderWidth: 1, borderColor: colors.border },
   modalHandle: { alignSelf: "center", width: 42, height: 4, borderRadius: 2, backgroundColor: colors.muted, marginBottom: 12 },
   detailContent: { paddingBottom: 12, gap: 6 },

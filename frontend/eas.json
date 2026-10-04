@@ -11,6 +11,16 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "production-apk": {
+      "credentialsSource": "remote",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "apk"
+      }
     }
+  },
+  "cli": {
+    "appVersionSource": "remote"
   }
 }

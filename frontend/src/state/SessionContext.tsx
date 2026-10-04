@@ -4,6 +4,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
+import { backgroundBridge } from "@/src/services/sync/nativeBackground";
 import { queryClient } from "@/src/query-client";
 import { localStore } from "@/src/database/store";
 import { initializeServerConfig, setServerUrl } from "@/src/services/serverConfig";
@@ -24,6 +25,7 @@ interface SessionContextValue {
   enterReadonly: () => Promise<void>;
   exitReadonly: () => void;
   refreshSession: () => Promise<void>;
+  updateIdentity: (user: SessionUser) => Promise<void>;
   switchServer: (url: string) => Promise<void>;
 }
 
@@ -49,6 +51,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setSession(restored.session);
       setCacheAvailable(counts.parts > 0);
       if (restored.session && restored.token) {
+        await backgroundBridge?.resumeAuth();
+        if (!mounted) return;
         setUser({
           id: restored.session.id,
           username: restored.session.username,
@@ -75,6 +79,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const refreshSession = useCallback(async () => {
     const fresh = await localStore.getSession();
+    setSession(fresh);
+  }, []);
+
+  const updateIdentity = useCallback(async (nextUser: SessionUser) => {
+    await localStore.updateSessionIdentity(nextUser);
+    const fresh = await localStore.getSession();
+    setUser(nextUser);
     setSession(fresh);
   }, []);
 
@@ -117,8 +128,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ loading, token, user, session, cacheAvailable, mode, signIn, signOut, enterReadonly, exitReadonly, refreshSession, switchServer }),
-    [loading, token, user, session, cacheAvailable, mode, signIn, signOut, enterReadonly, exitReadonly, refreshSession, switchServer],
+    () => ({ loading, token, user, session, cacheAvailable, mode, signIn, signOut, enterReadonly, exitReadonly, refreshSession, updateIdentity, switchServer }),
+    [loading, token, user, session, cacheAvailable, mode, signIn, signOut, enterReadonly, exitReadonly, refreshSession, updateIdentity, switchServer],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

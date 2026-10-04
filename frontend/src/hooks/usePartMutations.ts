@@ -14,11 +14,11 @@ import { newLocalId } from "@/src/utils/id";
 function useAfterMutation() {
   const qc = useQueryClient();
   const { syncNow, refreshPending } = useSync();
-  return async (rowUid?: string) => {
+  return (rowUid?: string) => {
     qc.invalidateQueries({ queryKey: ["parts"] });
     qc.invalidateQueries({ queryKey: ["counts"] });
     if (rowUid) qc.invalidateQueries({ queryKey: ["part", rowUid] });
-    await refreshPending();
+    void refreshPending();
     void syncNow(); // fire-and-forget; guarded + offline-safe
   };
 }
@@ -27,6 +27,8 @@ export function useCreatePart() {
   const { mode } = useSession();
   const after = useAfterMutation();
   return useMutation({
+    // This operation writes the local database; sync handles network access.
+    networkMode: "always",
     mutationFn: (input: Omit<CreatePartInput, "local_id">) => {
       if (mode === "readonly") throw new Error("El inventario está en modo solo lectura.");
       return inventoryRepository.createPart({ ...input, local_id: newLocalId() });
@@ -39,6 +41,8 @@ export function useUpdatePart() {
   const { mode } = useSession();
   const after = useAfterMutation();
   return useMutation({
+    // This operation writes the local database; sync handles network access.
+    networkMode: "always",
     mutationFn: ({ rowUid, fields }: { rowUid: string; fields: EditablePartFields }) => {
       if (mode === "readonly") throw new Error("El inventario está en modo solo lectura.");
       return inventoryRepository.updatePart(rowUid, fields);
@@ -51,6 +55,8 @@ export function useDeletePart() {
   const { mode } = useSession();
   const after = useAfterMutation();
   return useMutation({
+    // This operation writes the local database; sync handles network access.
+    networkMode: "always",
     mutationFn: (rowUid: string) => {
       if (mode === "readonly") throw new Error("El inventario está en modo solo lectura.");
       return inventoryRepository.deletePart(rowUid);
@@ -58,3 +64,4 @@ export function useDeletePart() {
     onSuccess: (_r, rowUid) => after(rowUid),
   });
 }
+

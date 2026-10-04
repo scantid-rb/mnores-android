@@ -27,7 +27,9 @@ const roleLabels: Record<Role, string> = {
 const rolesFor = (role: Role): Role[] =>
   role === "admin"
     ? ["admin", "inspector", "chief_engineer", "mechanic"]
-    : ["chief_engineer", "mechanic"];
+    : role === "inspector"
+      ? ["chief_engineer", "mechanic"]
+      : ["mechanic"];
 
 export default function UsersAdminScreen() {
   const styles = useStyles();
@@ -52,7 +54,9 @@ export default function UsersAdminScreen() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const allowed = actor?.role === "admin" || actor?.role === "inspector";
+  const allowed =
+    actor?.role === "admin" || actor?.role === "inspector" || actor?.role === "chief_engineer";
+  const isChief = actor?.role === "chief_engineer";
   const roleOptions = useMemo(() => rolesFor(actor?.role ?? "inspector"), [actor?.role]);
   const editingUser = users.find((u) => u.id === editingId) ?? null;
   const isPrimaryAdmin = editingUser?.is_primary_admin === 1;
@@ -66,7 +70,7 @@ export default function UsersAdminScreen() {
     setPassword("");
     setPassword2("");
     setRole(roleOptions.includes("mechanic") ? "mechanic" : roleOptions[0]);
-    setBoatId(null);
+    setBoatId(isChief ? actor?.boat_id ?? null : null);
     setActive(true);
     setError(null);
   };
@@ -78,8 +82,8 @@ export default function UsersAdminScreen() {
     setLastName(u.last_name);
     setPassword("");
     setPassword2("");
-    setRole(u.role);
-    setBoatId(u.boat_id);
+    setRole(isChief ? "mechanic" : u.role);
+    setBoatId(isChief ? actor?.boat_id ?? null : u.boat_id);
     setActive(u.is_active === 1);
     setError(null);
   };
@@ -101,8 +105,11 @@ export default function UsersAdminScreen() {
         return;
       }
     }
-    if ((role === "chief_engineer" || role === "mechanic") && boatId == null) {
-      setError("Este rol requiere un barco asignado.");
+    const effectiveRole: Role = isChief ? "mechanic" : role;
+    const effectiveBoatId = isChief ? actor?.boat_id ?? null : boatId;
+
+    if ((effectiveRole === "chief_engineer" || effectiveRole === "mechanic") && effectiveBoatId == null) {
+      setError(isChief ? "Tu cuenta no tiene un barco asignado." : "Este rol requiere un barco asignado.");
       return;
     }
 
@@ -117,8 +124,8 @@ export default function UsersAdminScreen() {
           last_name: lastName.trim(),
           password,
           password2,
-          role,
-          boat_id: boatId,
+          role: effectiveRole,
+          boat_id: effectiveBoatId,
           is_active: active,
         });
       } else {
@@ -129,8 +136,8 @@ export default function UsersAdminScreen() {
           last_name: lastName.trim(),
           password: password || undefined,
           password2: password2 || undefined,
-          role,
-          boat_id: boatId,
+          role: effectiveRole,
+          boat_id: effectiveBoatId,
           is_active: active,
         });
       }
@@ -196,8 +203,10 @@ export default function UsersAdminScreen() {
           <Text style={styles.back}>‹ Volver</Text>
         </Pressable>
         <View style={styles.headerCenter}>
-          <Text style={styles.title}>Usuarios</Text>
-          <Text style={styles.subtitle}>Gestión administrativa</Text>
+          <Text style={styles.title}>{isChief ? "Mecánicos" : "Usuarios"}</Text>
+          <Text style={styles.subtitle}>
+            {isChief ? "Mecánicos de tu barco" : "Gestión administrativa"}
+          </Text>
         </View>
         <StatusBadge online={online} syncing={saving} />
       </View>
@@ -281,39 +290,52 @@ export default function UsersAdminScreen() {
             secureTextEntry
           />
 
-          <Text style={styles.label}>Rol</Text>
-          <View style={styles.options}>
-            {roleOptions.map((r) => (
-              <Pressable
-                key={r}
-                style={[styles.option, role === r && styles.optionSelected]}
-                onPress={() => setRole(r)}
-                disabled={!online || saving || isPrimaryAdmin}
-              >
-                <Text style={[styles.optionText, role === r && styles.optionTextSelected]}>
-                  {roleLabels[r]}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-
-          {(role === "chief_engineer" || role === "mechanic") && (
+          {isChief ? (
+            <View style={styles.fixedScope}>
+              <Text style={styles.label}>Rol</Text>
+              <Text style={styles.fixedScopeText}>Mecánico</Text>
+              <Text style={styles.label}>Barco</Text>
+              <Text style={styles.fixedScopeText}>
+                {availableBoats.find((b) => b.id === actor?.boat_id)?.name ?? "Barco asignado"}
+              </Text>
+            </View>
+          ) : (
             <>
-              <Text style={styles.label}>Barco *</Text>
+              <Text style={styles.label}>Rol</Text>
               <View style={styles.options}>
-                {availableBoats.map((b) => (
+                {roleOptions.map((r) => (
                   <Pressable
-                    key={b.id}
-                    style={[styles.option, boatId === b.id && styles.optionSelected]}
-                    onPress={() => setBoatId(b.id)}
+                    key={r}
+                    style={[styles.option, role === r && styles.optionSelected]}
+                    onPress={() => setRole(r)}
                     disabled={!online || saving || isPrimaryAdmin}
                   >
-                    <Text style={[styles.optionText, boatId === b.id && styles.optionTextSelected]}>
-                      {b.name}
+                    <Text style={[styles.optionText, role === r && styles.optionTextSelected]}>
+                      {roleLabels[r]}
                     </Text>
                   </Pressable>
                 ))}
               </View>
+
+              {(role === "chief_engineer" || role === "mechanic") && (
+                <>
+                  <Text style={styles.label}>Barco *</Text>
+                  <View style={styles.options}>
+                    {availableBoats.map((b) => (
+                      <Pressable
+                        key={b.id}
+                        style={[styles.option, boatId === b.id && styles.optionSelected]}
+                        onPress={() => setBoatId(b.id)}
+                        disabled={!online || saving || isPrimaryAdmin}
+                      >
+                        <Text style={[styles.optionText, boatId === b.id && styles.optionTextSelected]}>
+                          {b.name}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </>
+              )}
             </>
           )}
 
@@ -441,6 +463,8 @@ const useStyles = makeStyles((colors) => ({
   stateBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, overflow: "hidden", fontSize: 11, fontWeight: "800" },
   active: { backgroundColor: colors.brandTertiary, color: colors.onBrandTertiary },
   inactive: { backgroundColor: colors.surfaceTertiary, color: colors.muted },
+  fixedScope: { backgroundColor: colors.brandTertiary, borderRadius: 12, padding: 12, gap: 5 },
+  fixedScopeText: { fontSize: 14, fontWeight: "700", color: colors.onBrandTertiary },
   primaryNotice: { fontSize: 12, lineHeight: 17, color: colors.muted },
   error: { color: colors.error, fontSize: 13, marginTop: 2 },
   primaryButton: { backgroundColor: colors.brandPrimary, borderRadius: 12, paddingVertical: 14, alignItems: "center", marginTop: 4 },

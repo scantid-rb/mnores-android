@@ -3,6 +3,8 @@
 // Triggers a sync pass on app start (if online), on connectivity regain, and
 // on demand. It does not block the inventory while the queue is processed.
 
+import { AppState } from "react-native";
+import { reconcileBackgroundSync } from "@/src/services/sync/backgroundScheduling";
 import React, {
   createContext,
   useCallback,
@@ -24,6 +26,9 @@ type SyncStatus = "idle" | "syncing" | "error";
 interface SyncContextValue {
   status: SyncStatus;
   pendingCount: number;
+  failedCount: number;
+  retryFailed: () => Promise<void>;
+  discardFailed: () => Promise<void>;
   lastError: string | null;
   conflictNotice: boolean;
   diagnostics: SyncDiagnostics | null;
@@ -42,6 +47,7 @@ const SyncContext = createContext<SyncContextValue | undefined>(undefined);
 
 function invalidateInventory() {
   queryClient.invalidateQueries({ queryKey: ["parts"] });
+  queryClient.invalidateQueries({ queryKey: ["part"] });
   queryClient.invalidateQueries({ queryKey: ["categories"] });
   queryClient.invalidateQueries({ queryKey: ["boats"] });
   queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -63,6 +69,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   const [status, setStatus] = useState<SyncStatus>("idle");
   const [pendingCount, setPendingCount] = useState(0);
+  const [failedCount, setFailedCount] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
   const [conflictNotice, setConflictNotice] = useState(false);
   const [diagnostics, setDiagnostics] = useState<SyncDiagnostics | null>(null);
@@ -78,7 +85,10 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const prevOnline = useRef(online);
 
   const refreshPending = useCallback(async () => {
+    await localStore.init();
     setPendingCount(await localStore.getPendingCount());
+    setFailedCount((await localStore.getFailedChanges()).length);
+    await reconcileBackgroundSync();
   }, []);
 
   const syncNow = useCallback(async () => {
@@ -123,6 +133,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       }
       if (summary.authError) {
         await signOut();
+        setStatus("idle");
         return;
       }
       // runSync persists the server cursor in SQLite. Refresh the session
@@ -145,7 +156,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   // If a sync request arrived while another pass was running, execute one
   // additional pass after the current pass has returned to idle.
   useEffect(() => {
-    if (status !== "idle" || !rerunRequested.current || !token || !online) return;
+    if (status === "syncing" || !rerunRequested.current || !token || !online) return;
     rerunRequested.current = false;
     void syncNow();
   }, [status, token, online, syncNow]);
@@ -165,10 +176,31 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     prevOnline.current = online;
   }, [online, token, syncNow]);
 
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active") return;
+      invalidateInventory();
+      void refreshSession();
+      void refreshPending();
+      if (token && online) void syncNow();
+    });
+    return () => subscription.remove();
+  }, [token, online, syncNow, refreshSession, refreshPending]);
+
+  const retryFailed = useCallback(async () => {
+    if (running.current) return;
+    await localStore.retryFailed(); await refreshPending(); await syncNow();
+  }, [refreshPending, syncNow]);
+  const discardFailed = useCallback(async () => {
+    if (running.current) return;
+    await localStore.discardFailed(); invalidateInventory();
+    await refreshPending(); await syncNow();
+  }, [refreshPending, syncNow]);
+
   const value = useMemo(
     () => ({
       status,
-      pendingCount,
+      pendingCount, failedCount, retryFailed, discardFailed,
       lastError,
       conflictNotice,
       diagnostics,
@@ -182,7 +214,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       refreshPending,
       clearConflictNotice: () => setConflictNotice(false),
     }),
-    [status, pendingCount, lastError, conflictNotice, diagnostics, receivedParts, receivedActiveParts, receivedDeletedParts, cachedParts, protectedIds, missingActiveIds, syncNow, refreshPending],
+    [status, pendingCount, failedCount, retryFailed, discardFailed, lastError, conflictNotice, diagnostics, receivedParts, receivedActiveParts, receivedDeletedParts, cachedParts, protectedIds, missingActiveIds, syncNow, refreshPending],
   );
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;

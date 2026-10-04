@@ -5,7 +5,7 @@ const isArm64Preview = process.env.EAS_BUILD_PROFILE === "preview-arm64";
 const config: ExpoConfig = {
   name: "ShipInventory",
   slug: "shipinventory",
-  version: "0.1.3",
+  version: "0.1.4",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: "shipinventory",
@@ -44,6 +44,12 @@ const config: ExpoConfig = {
     ],
     "expo-font",
     "expo-image",
+    [
+      "expo-navigation-bar",
+      {
+        hidden: true,
+      },
+    ],
     "expo-secure-store",
     "expo-web-browser",
     "expo-status-bar",
@@ -67,7 +73,7 @@ const config: ExpoConfig = {
                 buildArchs: ["arm64-v8a"],
               },
             },
-          ],
+          ] as [string, { android: { buildArchs: string[] } }],
         ]
       : []),
   ],

@@ -17,7 +17,7 @@ import { useCreatePart, useUpdatePart } from "@/src/hooks/usePartMutations";
 import { useSession } from "@/src/state/SessionContext";
 import { makeStyles, useTheme } from "@/src/theme";
 import { EditablePartFields } from "@/src/types";
-import { canEditFields } from "@/src/utils/permissions";
+import { canCreatePart, canEditFields } from "@/src/utils/permissions";
 
 export default function PartEditScreen() {
   const styles = useStyles();
@@ -101,13 +101,18 @@ export default function PartEditScreen() {
         : { quantity: parsedQty };
       updatePart.mutate({ rowUid: String(rowUid), fields }, { onSuccess: () => router.back() });
     } else {
-      if (boatId == null && user?.boat_id == null) {
+      if (!user || !canCreatePart(user.role)) {
+        setError("No tienes permiso para crear repuestos.");
+        return;
+      }
+      const createBoatId = user.role === "chief_engineer" ? user.boat_id : (boatId ?? user.boat_id);
+      if (createBoatId == null) {
         setError("Selecciona un barco.");
         return;
       }
       createPart.mutate(
         {
-          boat_id: boatId ?? user.boat_id,
+          boat_id: createBoatId,
           name: name.trim(),
           reference: reference.trim() || null,
           category_id: categoryId,

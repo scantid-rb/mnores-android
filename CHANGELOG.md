@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.4] - 2026-09-30
+
+### Compatibilidad API 1.4.5
+- Cliente Android alineado con API 1.4.5 y versión de aplicación 0.1.4.
+- Portadas las mejoras comunes de sincronización: reclamación segura de cola, protección de operaciones pendientes, reintento y descarte explícitos de cambios fallidos y reconciliación más robusta.
+- Reconciliación local actualizada para usuarios, barcos, categorías y tombstones.
+- Gestión de fotografías endurecida con comprobación de existencia, cola robusta y subida cancelable con timeout.
+- Se mantienen NetInfo, expo-sqlite, SecureStore y FileSystem nativos; no se incorporan IndexedDB, Service Worker ni lógica específica de PWA.
+
+
 Todos los cambios relevantes de la aplicación Android se documentan aquí.
 
 ## [0.1.3] - 2026-09-28
