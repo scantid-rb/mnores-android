@@ -30,6 +30,7 @@ export default function PartEditScreen() {
 
   const { user, token, session, mode: accessMode } = useSession();
   const fullEdit = canEditFields(user?.role);
+  const canChooseBoat = user?.role === "admin" || user?.role === "inspector";
 
   const { data: categories = [] } = useCategories();
   const { data: boats = [] } = useBoats();
@@ -139,7 +140,7 @@ export default function PartEditScreen() {
 
       <KeyboardAwareScrollView bottomOffset={24} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Field label="Barco">
-          {fullEdit && !isEdit ? (
+          {canChooseBoat && !isEdit ? (
             <View style={styles.chipsRow}>
               {boats.filter((b) => b.is_active).map((b) => {
                 const active = (boatId ?? user?.boat_id) === b.id;
