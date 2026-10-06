@@ -1,0 +1,75 @@
+name: Replace Android 0.1.4 release APK
+
+on:
+  push:
+    branches:
+      - 0.1.4
+
+permissions:
+  contents: write
+
+jobs:
+  replace:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download replacement production APK from Expo
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 5 --retry-delay 5 \
+            --output ShipInventory-Android-0.1.4.apk \
+            "https://expo.dev/artifacts/eas/Z4DkjOcMWmNSIcN5tIDxFZobqYoCSaPqDmWsjFGE60M.apk"
+          test -s ShipInventory-Android-0.1.4.apk
+          unzip -t ShipInventory-Android-0.1.4.apk >/dev/null
+          ls -lh ShipInventory-Android-0.1.4.apk
+
+      - name: Generate SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum ShipInventory-Android-0.1.4.apk > ShipInventory-Android-0.1.4.apk.sha256
+          cat ShipInventory-Android-0.1.4.apk.sha256
+
+      - name: Refresh release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view android-v0.1.4 --repo "${GITHUB_REPOSITORY}" --json body --jq .body > RELEASE_NOTES.md
+          HASH="$(cut -d' ' -f1 ShipInventory-Android-0.1.4.apk.sha256)"
+          sed -i "s/f6e2ff95f521164172dbb955ead490fa7bba1caab2362595d93af0dbc39e2f42/${HASH}/g" RELEASE_NOTES.md
+          if ! grep -q '^## Actualización del APK' RELEASE_NOTES.md; then
+            awk 'BEGIN{done=0} /^## Novedades principales/ && !done {print "## Actualización del APK\n\n- Build de producción actualizada con la corrección UX del selector de barcos.\n- Jefe de Máquinas y Mecánico ya no pueden elegir otro barco al crear un repuesto; la selección manual queda reservada a Admin e Inspector.\n"; done=1} {print}' RELEASE_NOTES.md > RELEASE_NOTES.tmp
+            mv RELEASE_NOTES.tmp RELEASE_NOTES.md
+          fi
+
+      - name: Replace release assets and notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload android-v0.1.4 \
+            ShipInventory-Android-0.1.4.apk \
+            ShipInventory-Android-0.1.4.apk.sha256 \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
+          gh release edit android-v0.1.4 \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "ShipInventory Android 0.1.4" \
+            --notes-file RELEASE_NOTES.md \
+            --latest
+
+      - name: Point release tag at revised 0.1.4 source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init tag-update
+          cd tag-update
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin 33e288355be5dcef767e0596f81f76c6fa9b20f7
+          git tag -f android-v0.1.4 33e288355be5dcef767e0596f81f76c6fa9b20f7
+          git push origin --force refs/tags/android-v0.1.4
